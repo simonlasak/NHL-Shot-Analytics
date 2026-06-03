@@ -4,463 +4,986 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NHL Shot Analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;600;700&family=Barlow:wght@300;400;500&display=swap');
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --rink-bg:#0b1520; --panel:#111d2b; --panel2:#162233;
-    --accent:#00c2ff; --text:#e2edf7; --muted:#5a7a96; --border:#1e3348;
-    --green:#39d98a; --orange:#ff8c42; --red:#ff4d4d;
-  }
-  body {
-    background:var(--rink-bg); color:var(--text); font-family:'Barlow',sans-serif;
-    min-height:100vh; padding:24px 20px 48px;
-    display:flex; flex-direction:column; align-items:center; gap:20px;
-  }
-  header { display:flex; flex-direction:column; align-items:center; gap:4px; width:100%; }
-  h1 { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:2rem;
-       letter-spacing:0.15em; text-transform:uppercase; color:var(--accent); }
-  h1 span { color:var(--text); }
-  .subtitle { font-size:0.82rem; color:var(--muted); letter-spacing:0.05em; }
+:root {
+  --bg-page:       #FFFFFF;
+  --bg-surface:    #F0F0F0;
+  --text-primary:  #000000;
+  --text-muted:    #808080;
+  --accent:        #FF4D17;
+  --border:        #000000;
+  --border-light:  #E0E0E0;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Monaco, Consolas, monospace;
 
-  .controls {
-    display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; justify-content:center;
-    background:var(--panel); border:1px solid var(--border);
-    border-radius:10px; padding:14px 20px; width:100%; max-width:840px;
-  }
-  .ctrl-group { display:flex; flex-direction:column; gap:4px; }
-  .ctrl-label { font-size:0.68rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); }
-  .btn-group { display:flex; gap:4px; }
-  button {
-    font-family:'Barlow Condensed',sans-serif; font-size:0.85rem; font-weight:600;
-    letter-spacing:0.05em; padding:5px 14px; border-radius:5px;
-    border:1px solid #2a4060; background:var(--panel2); color:var(--muted);
-    cursor:pointer; transition:all 0.15s;
-  }
-  button.active, button:hover { background:var(--accent); color:#000; border-color:var(--accent); }
-  select {
-    font-family:'Barlow Condensed',sans-serif; font-size:0.85rem; font-weight:600;
-    letter-spacing:0.04em; padding:5px 28px 5px 10px; border-radius:5px;
-    border:1px solid #2a4060; background:var(--panel2); color:var(--text);
-    cursor:pointer; -webkit-appearance:none; appearance:none;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a7a96'/%3E%3C/svg%3E");
-    background-repeat:no-repeat; background-position:right 8px center;
-    min-width:120px; transition:border-color 0.15s;
-  }
-  select:hover, select:focus { border-color:var(--accent); outline:none; }
-  select option { background:#111d2b; color:var(--text); }
-  .filter-badge {
-    font-family:'Barlow Condensed',sans-serif; font-size:0.75rem; letter-spacing:0.06em;
-    background:rgba(0,194,255,0.1); border:1px solid rgba(0,194,255,0.3);
-    color:var(--accent); padding:3px 10px; border-radius:4px; display:flex; align-items:center; gap:8px;
-  }
-  .badge-clear {
-    cursor:pointer; color:var(--muted); font-size:0.9em; padding:0 2px;
-    transition:color 0.15s; line-height:1;
-  }
-  .badge-clear:hover { color:var(--accent); }
+  --space-1:  8px;  --space-2: 16px;  --space-3: 24px;
+  --space-4: 32px;  --space-5: 40px;  --space-6: 48px;
+  --space-8: 64px;
+}
 
-  /* Loading overlay */
-  #loadingOverlay {
-    position:fixed; inset:0; background:rgba(11,21,32,0.92);
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:16px; z-index:9999;
-  }
-  #loadingOverlay.hidden { display:none; }
-  .loading-spinner {
-    width:42px; height:42px; border:3px solid #1e3348;
-    border-top-color:var(--accent); border-radius:50%;
-    animation:spin 0.8s linear infinite;
-  }
-  @keyframes spin { to { transform:rotate(360deg); } }
-  .loading-text { font-family:'Barlow Condensed',sans-serif; font-size:1.1rem;
-    letter-spacing:0.12em; color:var(--accent); }
-  .loading-sub { font-size:0.78rem; color:var(--muted); letter-spacing:0.05em; }
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border-radius: 0 !important;
+}
 
-  /* ── Rink block (UNCHANGED) ── */
-  .rink-block { width:840px; max-width:100%; }
-  #rulerCanvas {
-    display:block; width:840px; max-width:100%; height:38px;
-    background:var(--panel); border-radius:10px 10px 0 0;
-    border:1px solid var(--border); border-bottom:none;
-  }
-  .canvas-stack {
-    position:relative; width:840px; height:714px;
-    border-radius:0 0 12px 12px; overflow:hidden;
-    box-shadow:0 0 60px rgba(0,194,255,0.08), 0 0 0 1px var(--border);
-    cursor:crosshair;
-  }
-  #rinkSvg { position:absolute; top:0; left:0; width:100%; height:100%; }
-  #heatCanvas, #dotCanvas { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
-  #hoverOverlay { position:absolute; top:0; left:0; width:100%; height:100%; }
+html, body { background: var(--bg-page); }
 
-  /* ── Tooltip ── */
-  #tooltip {
-    position:fixed; pointer-events:none; z-index:999;
-    background:#0d1a28; border:1px solid var(--border);
-    border-radius:8px; padding:10px 14px; min-width:180px;
-    font-size:0.78rem; line-height:1.7; display:none;
-    box-shadow:0 4px 24px rgba(0,0,0,0.5);
-  }
-  #tooltip .tt-name { font-family:'Barlow Condensed',sans-serif; font-size:1rem; font-weight:700;
-    color:var(--accent); letter-spacing:0.05em; margin-bottom:4px; }
-  #tooltip .tt-row { display:flex; justify-content:space-between; gap:16px; }
-  #tooltip .tt-key { color:var(--muted); }
-  #tooltip .tt-val { color:var(--text); font-weight:500; }
-  #tooltip .tt-divider { border:none; border-top:1px solid var(--border); margin:5px 0; }
+body {
+  overflow-x: hidden;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
 
-  .legend-row { display:flex; align-items:center; gap:16px; justify-content:center; flex-wrap:wrap; }
-  .legend-scale { display:flex; align-items:center; gap:8px; }
-  .legend-gradient {
-    width:160px; height:10px; border-radius:5px;
-    background:linear-gradient(to right,transparent,rgba(255,230,0,0.5),rgba(255,120,0,0.7),rgba(220,30,30,0.85));
-    border:1px solid #2a4060;
-  }
-  .legend-label { font-size:0.72rem; color:var(--muted); letter-spacing:0.05em; }
-  .dot-legend { display:flex; gap:12px; align-items:center; }
-  .dot-item { display:flex; align-items:center; gap:5px; font-size:0.72rem; color:var(--muted); }
-  .dot-circle { width:8px; height:8px; border-radius:50%; }
+/* ── Top nav ── */
+.nav {
+  height: 56px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-page);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-8);
+  gap: var(--space-4);
+}
+.nav-title {
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.nav-meta {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
 
-  .stats-bar {
-    display:flex; gap:24px; background:var(--panel); border:1px solid var(--border);
-    border-radius:8px; padding:10px 24px; width:100%; max-width:840px;
-    justify-content:center; flex-wrap:wrap;
-  }
-  .stat { display:flex; flex-direction:column; align-items:center; gap:2px; }
-  .stat-value { font-family:'Barlow Condensed',sans-serif; font-size:1.5rem; font-weight:700; color:var(--accent); }
-  .stat-label { font-size:0.68rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); }
+/* ── Page wrapper — width tied to the rink (840px) so every block aligns ── */
+.page {
+  position: relative;
+  width: 840px;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: var(--space-6) 0 var(--space-8);
+}
 
-  .section-divider {
-    width:100%; max-width:840px; display:flex; align-items:center; gap:12px; margin:8px 0 0;
-  }
-  .section-divider h2 {
-    font-family:'Barlow Condensed',sans-serif; font-size:1.1rem; font-weight:600;
-    letter-spacing:0.12em; text-transform:uppercase; color:var(--accent); white-space:nowrap;
-  }
-  .divider-line { flex:1; height:1px; background:var(--border); }
+/* ── Section markers ── */
+.section-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: var(--space-1);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
 
-  /* ── Bottom grid: scatter + leaderboard ── */
-  .bottom-grid {
-    display:grid; grid-template-columns:1fr 1fr; gap:16px;
-    width:100%; max-width:840px;
-  }
-  .chart-panel {
-    background:var(--panel); border:1px solid var(--border);
-    border-radius:12px; padding:16px 18px 14px;
-  }
-  .chart-header { display:flex; justify-content:space-between; align-items:flex-start;
-    flex-wrap:wrap; gap:8px; margin-bottom:12px; }
-  .chart-title { font-family:'Barlow Condensed',sans-serif; font-size:0.95rem; font-weight:600;
-    letter-spacing:0.08em; text-transform:uppercase; color:var(--text); }
-  .chart-sub { font-size:0.68rem; color:var(--muted); margin-top:2px; }
-  .type-pills { display:flex; flex-wrap:wrap; gap:5px; }
-  .pill {
-    font-family:'Barlow Condensed',sans-serif; font-size:0.75rem; font-weight:600;
-    letter-spacing:0.05em; padding:3px 10px; border-radius:20px;
-    border:1px solid; cursor:pointer; transition:all 0.15s; opacity:0.35;
-  }
-  .pill.active { opacity:1; }
-  .chart-panel-wide {
-    width:100%; max-width:840px; background:var(--panel); border:1px solid var(--border);
-    border-radius:12px; padding:20px 24px 16px;
-  }
-  #scatterCanvas { display:block; width:100%; }
-  #xgChart { display:block; width:100%; }
+/* ── 8-bit pixel-art icons ── */
+.ico {
+  display: inline-block;
+  vertical-align: middle;
+  shape-rendering: crispEdges;
+  flex: none;
+}
+.sec-ico { width: 18px; height: 18px; }
+.sec-ico-end { margin-left: auto; }
+.stat-ico { width: 14px; height: 14px; }
+.section-rule {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--space-2) 0 var(--space-3);
+}
+.section-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--space-8) 0 var(--space-3);
+}
 
-  /* ── Leaderboard ── */
-  .leader-scroll { overflow-y:auto; max-height:280px; }
-  .leader-scroll::-webkit-scrollbar { width:4px; }
-  .leader-scroll::-webkit-scrollbar-track { background:transparent; }
-  .leader-scroll::-webkit-scrollbar-thumb { background:#2a4060; border-radius:2px; }
-  .leader-table { width:100%; border-collapse:collapse; font-size:0.75rem; }
-  .leader-table th {
-    font-family:'Barlow Condensed',sans-serif; font-size:0.68rem; letter-spacing:0.08em;
-    text-transform:uppercase; color:var(--muted); padding:4px 6px;
-    border-bottom:1px solid var(--border); text-align:right; cursor:pointer;
-    white-space:nowrap; position:sticky; top:0; background:var(--panel); z-index:1;
-  }
-  .leader-table th:first-child { text-align:left; }
-  .leader-table th:hover { color:var(--accent); }
-  .leader-table th.sort-active { color:var(--accent); }
-  .leader-table td {
-    padding:5px 6px; border-bottom:1px solid rgba(30,51,72,0.5);
-    text-align:right; color:var(--text);
-  }
-  .leader-table td:first-child { text-align:left; }
-  .leader-table tr { cursor:pointer; transition:background 0.12s; }
-  .leader-table tr:hover td { background:rgba(0,194,255,0.07); }
-  .leader-table tr.selected td { background:rgba(0,194,255,0.13); }
-  .td-name { font-weight:500; white-space:nowrap; }
-  .td-pos {
-    font-family:'Barlow Condensed',sans-serif; font-size:0.68rem;
-    color:var(--muted); letter-spacing:0.04em;
-  }
-  .td-diff-pos { color:var(--green); }
-  .td-diff-neg { color:var(--orange); }
-  .td-xg-bar {
-    display:inline-block; height:4px; border-radius:2px;
-    background:var(--accent); opacity:0.5; vertical-align:middle; margin-left:4px;
-  }
+/* ── Lead block (page title) ── */
+.lead {
+  margin-bottom: var(--space-5);
+}
+.lead h1 {
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: 0;
+  margin-bottom: var(--space-1);
+}
+.lead .meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
 
-  .scatter-legend {
-    display:flex; gap:12px; margin-top:8px; justify-content:center; flex-wrap:wrap;
-  }
-  .scatter-legend-item { display:flex; align-items:center; gap:5px; font-size:0.68rem; color:var(--muted); }
-  .scatter-dot { width:8px; height:8px; border-radius:50%; }
+/* ── Controls ── */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+  border: 1px solid var(--border);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.ctrl-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ctrl-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-primary);
+}
 
-  .xg-toggle { display:flex; gap:4px; }
+/* ── Buttons ── */
+.btn-group { display: flex; }
+.btn-group button + button { margin-left: -1px; }
+
+button {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--border);
+  background: var(--bg-page);
+  color: var(--text-primary);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 100ms ease, color 100ms ease;
+  line-height: 1;
+}
+button:hover {
+  background: var(--text-primary);
+  color: var(--bg-page);
+}
+button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-page);
+}
+button.active:hover {
+  background: var(--accent);
+  color: var(--bg-page);
+}
+
+/* ── Select ── */
+select {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 400;
+  border: 1px solid var(--border);
+  background: var(--bg-page);
+  color: var(--text-primary);
+  padding: 8px 28px 8px 12px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23000000'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  min-width: 160px;
+}
+select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--border);
+}
+select option {
+  background: var(--bg-page);
+  color: var(--text-primary);
+}
+
+/* ── Filter badge ── */
+.filter-badge {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: var(--bg-page);
+  padding: 6px 14px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+.badge-clear {
+  cursor: pointer;
+  color: var(--accent);
+  padding: 0 2px;
+  line-height: 1;
+}
+
+/* ── Loading overlay (no spinner) ── */
+#loadingOverlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-page);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-1);
+  z-index: 9999;
+  padding: var(--space-8);
+}
+#loadingOverlay.hidden { display: none; }
+.loading-text {
+  font-size: 14px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-primary);
+}
+.loading-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.loading-bar {
+  width: 240px;
+  height: 1px;
+  background: var(--border);
+  margin-top: var(--space-1);
+  position: relative;
+  overflow: hidden;
+}
+.loading-bar::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 33%;
+  height: 100%;
+  background: var(--accent);
+  animation: bar-slide 1.4s linear infinite;
+}
+@keyframes bar-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(420%); }
+}
+
+/* ── Rink ── */
+.rink-block {
+  width: 100%;
+  margin-bottom: var(--space-3);
+}
+#rulerCanvas {
+  display: block;
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  background: var(--bg-page);
+}
+.canvas-stack {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 840 / 714;
+  border: 1px solid var(--border);
+  cursor: crosshair;
+  overflow: hidden;
+}
+#rinkSvg, #heatCanvas, #dotCanvas, #hoverOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+#heatCanvas, #dotCanvas { pointer-events: none; }
+
+/* ── Tooltip ── */
+#tooltip {
+  position: fixed;
+  pointer-events: none;
+  z-index: 999;
+  background: var(--text-primary);
+  color: var(--bg-page);
+  border: none;
+  padding: 8px 12px;
+  min-width: 220px;
+  font-size: 12px;
+  line-height: 1.5;
+  display: none;
+}
+#tooltip .tt-name {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bg-page);
+  margin-bottom: 6px;
+}
+#tooltip .tt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 12px;
+}
+#tooltip .tt-key {
+  color: #B0B0B0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+}
+#tooltip .tt-val { color: var(--bg-page); }
+#tooltip .tt-divider {
+  border: none;
+  border-top: 1px solid #404040;
+  margin: 6px 0;
+}
+
+/* ── Legend row ── */
+.legend-row {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+  align-items: center;
+}
+.legend-scale {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.legend-gradient {
+  width: 160px;
+  height: 8px;
+  background: linear-gradient(to right, #FFFFFF, #FF4D17);
+  border: 1px solid var(--border);
+}
+.legend-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.dot-legend { display: flex; gap: var(--space-2); align-items: center; }
+.dot-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.dot-square { width: 8px; height: 8px; display: inline-block; }
+
+/* ── Stats grid ── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  border: 1px solid var(--border);
+  margin-bottom: var(--space-5);
+}
+.stat {
+  padding: var(--space-2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.stat:last-child { border-right: none; }
+.stat-value {
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stat-value.accent { color: var(--accent); }
+.stat-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Bottom grid (scatter + leaderboard) ── */
+.bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.chart-panel {
+  border: 1px solid var(--border);
+  padding: var(--space-3);
+}
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.chart-title {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-primary);
+}
+.chart-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Type pills ── */
+.type-pills { display: flex; flex-wrap: wrap; }
+.pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--text-primary);
+  background: var(--bg-page);
+  margin-left: -1px;
+  line-height: 1.2;
+}
+.pill:first-child { margin-left: 0; }
+.pill.active {
+  background: var(--text-primary);
+  color: var(--bg-page);
+  border-color: var(--border);
+}
+.pill:not(.active) {
+  color: var(--text-muted);
+  background: var(--bg-page);
+}
+
+/* ── Wide chart panel ── */
+.chart-panel-wide {
+  border: 1px solid var(--border);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+#scatterCanvas, #xgChart { display: block; width: 100%; }
+
+/* ── Leaderboard table ── */
+.leader-scroll {
+  overflow-y: auto;
+  max-height: 320px;
+}
+.leader-scroll::-webkit-scrollbar { width: 6px; }
+.leader-scroll::-webkit-scrollbar-track { background: var(--bg-page); }
+.leader-scroll::-webkit-scrollbar-thumb { background: var(--border); }
+.leader-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.leader-table th {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--bg-page);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.leader-table th.right { text-align: right; }
+.leader-table th:hover { color: var(--accent); }
+.leader-table th.sort-active { color: var(--accent); }
+.leader-table td {
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-light);
+  padding: 8px 12px;
+  text-align: left;
+  color: var(--text-primary);
+}
+.leader-table td.right { text-align: right; }
+.leader-table tr { cursor: pointer; }
+.leader-table tr:hover td { background: var(--bg-surface); }
+.leader-table tr.selected td {
+  background: var(--bg-surface);
+  color: var(--accent);
+}
+.td-pos {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.td-diff-pos { color: var(--accent); }
+.td-diff-neg { color: var(--text-muted); }
+.td-rank {
+  color: var(--text-muted);
+  display: inline-block;
+  width: 24px;
+}
+
+/* ── Scatter footer ── */
+.scatter-footer {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.scatter-footer .item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── xG toggle ── */
+.xg-toggle { display: flex; }
+.xg-toggle button + button { margin-left: -1px; }
+
+/* ── Source line ── */
+.source-line {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: var(--space-1);
+}
+
+@media (max-width: 900px) {
+  .bottom-grid { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: repeat(3, 1fr); }
+  .stat:nth-child(3) { border-right: none; }
+  .nav { padding: 0 var(--space-3); }
+  .page { padding: var(--space-3) var(--space-3) var(--space-5); }
+}
+
+/* ── Decorative gutter art (8-bit, outside content) ── */
+.decor-layer { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+.gutter-decor { position: absolute; }
+.gutter-decor svg { display: block; shape-rendering: crispEdges; image-rendering: pixelated; }
+@media (max-width: 1180px) { .decor-layer { display: none; } }
 </style>
 </head>
 <body>
 
+<!-- ── 8-bit pixel-art sprite sheet (monochrome black + orange accents) ── -->
 <!-- Loading overlay -->
 <div id="loadingOverlay">
-  <div class="loading-spinner"></div>
-  <div class="loading-text">Loading Shot Data</div>
-  <div class="loading-sub" id="loadingSub">Fetching shots_2018-2024_slim.csv…</div>
+  <div class="loading-text">§ LOADING SHOT DATA</div>
+  <div class="loading-sub" id="loadingSub">Fetching shots_2018-2024_slim.csv</div>
+  <div class="loading-bar"></div>
 </div>
 
-<header>
-  <h1>NHL <span>Shot</span> Analytics</h1>
-  <p class="subtitle">MoneyPuck · 2018–2024 · Offensive zone view · x=0 center ice → x=89 goal line → x=100 end boards</p>
-</header>
+<!-- Top nav -->
+<nav class="nav">
+  <span class="nav-title">§ NHL / SHOT ANALYTICS</span>
+  <span class="nav-meta">2018–2024 · src: MoneyPuck</span>
+</nav>
 
-<div class="controls">
-  <div class="ctrl-group">
-    <div class="ctrl-label">Season</div>
-    <select id="selSeason" onchange="applyAllFilters()">
-      <option value="ALL">All Seasons</option>
-    </select>
+<main class="page">
+<!-- ── Decorative 8-bit gutter art (outside content column) ── -->
+<div class="decor-layer" aria-hidden="true">
+  <div class="gutter-decor" style="top:70px;left:-150px;opacity:0.95;transform:rotate(-8deg)"><svg width="100" height="133" viewBox="0 0 21 28" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="0" width="4" height="1" fill="#000"/><rect x="9" y="1" width="6" height="1" fill="#000"/><rect x="9" y="2" width="1" height="1" fill="#000"/><rect x="10" y="2" width="4" height="1" fill="#FF4D17"/><rect x="14" y="2" width="1" height="1" fill="#000"/><rect x="9" y="3" width="6" height="1" fill="#000"/><rect x="10" y="4" width="4" height="1" fill="#000"/><rect x="8" y="5" width="3" height="1" fill="#000"/><rect x="7" y="6" width="4" height="1" fill="#000"/><rect x="16" y="6" width="2" height="1" fill="#000"/><rect x="6" y="7" width="6" height="1" fill="#000"/><rect x="15" y="7" width="2" height="1" fill="#000"/><rect x="5" y="8" width="3" height="1" fill="#000"/><rect x="10" y="8" width="2" height="1" fill="#000"/><rect x="14" y="8" width="2" height="1" fill="#000"/><rect x="4" y="9" width="2" height="1" fill="#000"/><rect x="11" y="9" width="4" height="1" fill="#000"/><rect x="3" y="10" width="2" height="1" fill="#000"/><rect x="10" y="10" width="6" height="1" fill="#000"/><rect x="2" y="11" width="2" height="1" fill="#000"/><rect x="9" y="11" width="3" height="1" fill="#000"/><rect x="14" y="11" width="2" height="1" fill="#000"/><rect x="1" y="12" width="2" height="1" fill="#000"/><rect x="8" y="12" width="3" height="1" fill="#000"/><rect x="15" y="12" width="2" height="1" fill="#000"/><rect x="1" y="13" width="1" height="1" fill="#000"/><rect x="2" y="13" width="3" height="1" fill="#FF4D17"/><rect x="7" y="13" width="3" height="1" fill="#000"/><rect x="16" y="13" width="2" height="1" fill="#000"/><rect x="1" y="14" width="1" height="1" fill="#000"/><rect x="2" y="14" width="5" height="1" fill="#FF4D17"/><rect x="7" y="14" width="2" height="1" fill="#000"/><rect x="17" y="14" width="1" height="1" fill="#000"/><rect x="1" y="15" width="1" height="1" fill="#000"/><rect x="2" y="15" width="5" height="1" fill="#FF4D17"/><rect x="7" y="15" width="1" height="1" fill="#000"/><rect x="17" y="15" width="1" height="1" fill="#000"/><rect x="1" y="16" width="1" height="1" fill="#000"/><rect x="2" y="16" width="5" height="1" fill="#FF4D17"/><rect x="7" y="16" width="1" height="1" fill="#000"/><rect x="17" y="16" width="1" height="1" fill="#000"/><rect x="1" y="17" width="5" height="1" fill="#000"/><rect x="7" y="17" width="1" height="1" fill="#000"/><rect x="1" y="18" width="1" height="1" fill="#000"/><rect x="5" y="18" width="3" height="1" fill="#000"/><rect x="1" y="19" width="1" height="1" fill="#000"/><rect x="5" y="19" width="1" height="1" fill="#000"/><rect x="7" y="19" width="2" height="1" fill="#000"/><rect x="1" y="20" width="1" height="1" fill="#000"/><rect x="5" y="20" width="1" height="1" fill="#000"/><rect x="8" y="20" width="2" height="1" fill="#000"/><rect x="0" y="21" width="1" height="1" fill="#000"/><rect x="5" y="21" width="1" height="1" fill="#000"/><rect x="9" y="21" width="2" height="1" fill="#000"/><rect x="0" y="22" width="1" height="1" fill="#000"/><rect x="5" y="22" width="1" height="1" fill="#000"/><rect x="10" y="22" width="2" height="1" fill="#000"/><rect x="1" y="23" width="1" height="1" fill="#000"/><rect x="5" y="23" width="1" height="1" fill="#000"/><rect x="11" y="23" width="1" height="1" fill="#000"/><rect x="1" y="24" width="2" height="1" fill="#000"/><rect x="4" y="24" width="2" height="1" fill="#000"/><rect x="11" y="24" width="2" height="1" fill="#000"/><rect x="1" y="25" width="5" height="1" fill="#000"/><rect x="10" y="25" width="4" height="1" fill="#000"/><rect x="0" y="26" width="1" height="1" fill="#FF4D17"/><rect x="1" y="26" width="1" height="1" fill="#000"/><rect x="5" y="26" width="1" height="1" fill="#000"/><rect x="6" y="26" width="1" height="1" fill="#FF4D17"/><rect x="9" y="26" width="1" height="1" fill="#FF4D17"/><rect x="10" y="26" width="1" height="1" fill="#000"/><rect x="13" y="26" width="1" height="1" fill="#000"/><rect x="14" y="26" width="1" height="1" fill="#FF4D17"/><rect x="1" y="27" width="5" height="1" fill="#000"/><rect x="10" y="27" width="4" height="1" fill="#000"/></svg></div>
+  <div class="gutter-decor" style="top:150px;right:-150px;opacity:0.85;transform:rotate(6deg)"><svg width="128" height="69" viewBox="0 0 28 15" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="1" height="1" fill="#FF4D17"/><rect x="1" y="0" width="24" height="1" fill="#000"/><rect x="25" y="0" width="1" height="1" fill="#FF4D17"/><rect x="0" y="1" width="2" height="1" fill="#000"/><rect x="26" y="1" width="2" height="1" fill="#000"/><rect x="0" y="2" width="1" height="1" fill="#000"/><rect x="2" y="2" width="1" height="1" fill="#808080"/><rect x="4" y="2" width="1" height="1" fill="#808080"/><rect x="6" y="2" width="1" height="1" fill="#808080"/><rect x="8" y="2" width="1" height="1" fill="#808080"/><rect x="10" y="2" width="1" height="1" fill="#808080"/><rect x="12" y="2" width="1" height="1" fill="#808080"/><rect x="14" y="2" width="1" height="1" fill="#808080"/><rect x="16" y="2" width="1" height="1" fill="#808080"/><rect x="18" y="2" width="1" height="1" fill="#808080"/><rect x="20" y="2" width="1" height="1" fill="#808080"/><rect x="22" y="2" width="1" height="1" fill="#808080"/><rect x="24" y="2" width="1" height="1" fill="#808080"/><rect x="26" y="2" width="1" height="1" fill="#000"/><rect x="0" y="3" width="1" height="1" fill="#000"/><rect x="26" y="3" width="1" height="1" fill="#000"/><rect x="0" y="4" width="1" height="1" fill="#000"/><rect x="2" y="4" width="1" height="1" fill="#808080"/><rect x="4" y="4" width="1" height="1" fill="#808080"/><rect x="6" y="4" width="1" height="1" fill="#808080"/><rect x="8" y="4" width="1" height="1" fill="#808080"/><rect x="10" y="4" width="1" height="1" fill="#808080"/><rect x="12" y="4" width="1" height="1" fill="#808080"/><rect x="14" y="4" width="1" height="1" fill="#808080"/><rect x="16" y="4" width="1" height="1" fill="#808080"/><rect x="18" y="4" width="1" height="1" fill="#808080"/><rect x="20" y="4" width="1" height="1" fill="#808080"/><rect x="22" y="4" width="1" height="1" fill="#808080"/><rect x="24" y="4" width="1" height="1" fill="#808080"/><rect x="26" y="4" width="1" height="1" fill="#000"/><rect x="0" y="5" width="1" height="1" fill="#000"/><rect x="26" y="5" width="1" height="1" fill="#000"/><rect x="0" y="6" width="1" height="1" fill="#000"/><rect x="2" y="6" width="1" height="1" fill="#808080"/><rect x="4" y="6" width="1" height="1" fill="#808080"/><rect x="6" y="6" width="1" height="1" fill="#808080"/><rect x="8" y="6" width="1" height="1" fill="#808080"/><rect x="10" y="6" width="1" height="1" fill="#808080"/><rect x="12" y="6" width="1" height="1" fill="#808080"/><rect x="14" y="6" width="1" height="1" fill="#808080"/><rect x="16" y="6" width="1" height="1" fill="#808080"/><rect x="18" y="6" width="1" height="1" fill="#808080"/><rect x="20" y="6" width="1" height="1" fill="#808080"/><rect x="22" y="6" width="1" height="1" fill="#808080"/><rect x="24" y="6" width="1" height="1" fill="#808080"/><rect x="26" y="6" width="1" height="1" fill="#000"/><rect x="0" y="7" width="1" height="1" fill="#000"/><rect x="26" y="7" width="1" height="1" fill="#000"/><rect x="0" y="8" width="1" height="1" fill="#000"/><rect x="2" y="8" width="1" height="1" fill="#808080"/><rect x="4" y="8" width="1" height="1" fill="#808080"/><rect x="6" y="8" width="1" height="1" fill="#808080"/><rect x="8" y="8" width="1" height="1" fill="#808080"/><rect x="10" y="8" width="1" height="1" fill="#808080"/><rect x="12" y="8" width="1" height="1" fill="#808080"/><rect x="14" y="8" width="1" height="1" fill="#808080"/><rect x="16" y="8" width="1" height="1" fill="#808080"/><rect x="18" y="8" width="1" height="1" fill="#808080"/><rect x="20" y="8" width="1" height="1" fill="#808080"/><rect x="22" y="8" width="1" height="1" fill="#808080"/><rect x="24" y="8" width="1" height="1" fill="#808080"/><rect x="26" y="8" width="1" height="1" fill="#000"/><rect x="0" y="9" width="1" height="1" fill="#000"/><rect x="26" y="9" width="1" height="1" fill="#000"/><rect x="0" y="10" width="1" height="1" fill="#000"/><rect x="2" y="10" width="1" height="1" fill="#808080"/><rect x="4" y="10" width="1" height="1" fill="#808080"/><rect x="6" y="10" width="1" height="1" fill="#808080"/><rect x="8" y="10" width="1" height="1" fill="#808080"/><rect x="10" y="10" width="1" height="1" fill="#808080"/><rect x="12" y="10" width="1" height="1" fill="#808080"/><rect x="14" y="10" width="1" height="1" fill="#808080"/><rect x="16" y="10" width="1" height="1" fill="#808080"/><rect x="18" y="10" width="1" height="1" fill="#808080"/><rect x="20" y="10" width="1" height="1" fill="#808080"/><rect x="22" y="10" width="1" height="1" fill="#808080"/><rect x="24" y="10" width="1" height="1" fill="#808080"/><rect x="26" y="10" width="1" height="1" fill="#000"/><rect x="0" y="11" width="1" height="1" fill="#000"/><rect x="26" y="11" width="1" height="1" fill="#000"/><rect x="0" y="12" width="1" height="1" fill="#000"/><rect x="2" y="12" width="1" height="1" fill="#808080"/><rect x="4" y="12" width="1" height="1" fill="#808080"/><rect x="6" y="12" width="1" height="1" fill="#808080"/><rect x="8" y="12" width="1" height="1" fill="#808080"/><rect x="10" y="12" width="1" height="1" fill="#808080"/><rect x="12" y="12" width="1" height="1" fill="#808080"/><rect x="14" y="12" width="1" height="1" fill="#808080"/><rect x="16" y="12" width="1" height="1" fill="#808080"/><rect x="18" y="12" width="1" height="1" fill="#808080"/><rect x="20" y="12" width="1" height="1" fill="#808080"/><rect x="22" y="12" width="1" height="1" fill="#808080"/><rect x="24" y="12" width="1" height="1" fill="#808080"/><rect x="26" y="12" width="1" height="1" fill="#000"/><rect x="0" y="13" width="2" height="1" fill="#000"/><rect x="26" y="13" width="2" height="1" fill="#000"/><rect x="0" y="14" width="1" height="1" fill="#FF4D17"/><rect x="1" y="14" width="24" height="1" fill="#000"/><rect x="25" y="14" width="1" height="1" fill="#FF4D17"/></svg></div>
+  <div class="gutter-decor" style="top:470px;right:-150px;opacity:0.95;transform:rotate(10deg)"><svg width="64" height="91" viewBox="0 0 14 20" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="0" width="6" height="1" fill="#000"/><rect x="3" y="1" width="8" height="1" fill="#000"/><rect x="2" y="2" width="2" height="1" fill="#000"/><rect x="4" y="2" width="6" height="1" fill="#FF4D17"/><rect x="10" y="2" width="2" height="1" fill="#000"/><rect x="1" y="3" width="1" height="1" fill="#000"/><rect x="2" y="3" width="10" height="1" fill="#FF4D17"/><rect x="12" y="3" width="1" height="1" fill="#000"/><rect x="1" y="4" width="1" height="1" fill="#000"/><rect x="2" y="4" width="10" height="1" fill="#FF4D17"/><rect x="12" y="4" width="1" height="1" fill="#000"/><rect x="0" y="5" width="1" height="1" fill="#000"/><rect x="1" y="5" width="12" height="1" fill="#FF4D17"/><rect x="13" y="5" width="1" height="1" fill="#000"/><rect x="0" y="6" width="1" height="1" fill="#000"/><rect x="1" y="6" width="12" height="1" fill="#FF4D17"/><rect x="13" y="6" width="1" height="1" fill="#000"/><rect x="0" y="7" width="1" height="1" fill="#000"/><rect x="1" y="7" width="12" height="1" fill="#FF4D17"/><rect x="13" y="7" width="1" height="1" fill="#000"/><rect x="1" y="8" width="1" height="1" fill="#000"/><rect x="2" y="8" width="10" height="1" fill="#FF4D17"/><rect x="12" y="8" width="1" height="1" fill="#000"/><rect x="1" y="9" width="1" height="1" fill="#000"/><rect x="2" y="9" width="10" height="1" fill="#FF4D17"/><rect x="12" y="9" width="1" height="1" fill="#000"/><rect x="2" y="10" width="2" height="1" fill="#000"/><rect x="4" y="10" width="6" height="1" fill="#FF4D17"/><rect x="10" y="10" width="2" height="1" fill="#000"/><rect x="3" y="11" width="8" height="1" fill="#000"/><rect x="4" y="12" width="6" height="1" fill="#000"/><rect x="5" y="13" width="4" height="1" fill="#000"/><rect x="6" y="14" width="2" height="1" fill="#000"/><rect x="6" y="15" width="2" height="1" fill="#000"/><rect x="5" y="16" width="4" height="1" fill="#000"/><rect x="4" y="17" width="6" height="1" fill="#000"/><rect x="3" y="18" width="8" height="1" fill="#000"/><rect x="3" y="19" width="8" height="1" fill="#000"/></svg></div>
+  <div class="gutter-decor" style="top:720px;left:-150px;opacity:0.9;transform:rotate(-14deg)"><svg width="78" height="54" viewBox="0 0 16 11" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="0" width="8" height="1" fill="#000"/><rect x="2" y="1" width="12" height="1" fill="#000"/><rect x="1" y="2" width="14" height="1" fill="#000"/><rect x="0" y="3" width="16" height="1" fill="#FF4D17"/><rect x="0" y="4" width="16" height="1" fill="#000"/><rect x="0" y="5" width="16" height="1" fill="#000"/><rect x="0" y="6" width="16" height="1" fill="#000"/><rect x="0" y="7" width="16" height="1" fill="#000"/><rect x="1" y="8" width="14" height="1" fill="#000"/><rect x="2" y="9" width="12" height="1" fill="#000"/><rect x="4" y="10" width="8" height="1" fill="#000"/></svg></div>
+  <div class="gutter-decor" style="top:880px;right:-150px;opacity:0.92;transform:rotate(0deg)"><svg width="104" height="90" viewBox="0 0 22 19" xmlns="http://www.w3.org/2000/svg"><rect x="21" y="0" width="1" height="1" fill="#000"/><rect x="20" y="1" width="2" height="1" fill="#000"/><rect x="19" y="2" width="2" height="1" fill="#000"/><rect x="18" y="3" width="2" height="1" fill="#000"/><rect x="17" y="4" width="2" height="1" fill="#000"/><rect x="16" y="5" width="2" height="1" fill="#000"/><rect x="15" y="6" width="2" height="1" fill="#000"/><rect x="14" y="7" width="2" height="1" fill="#000"/><rect x="13" y="8" width="2" height="1" fill="#000"/><rect x="12" y="9" width="2" height="1" fill="#000"/><rect x="11" y="10" width="2" height="1" fill="#000"/><rect x="10" y="11" width="2" height="1" fill="#000"/><rect x="9" y="12" width="2" height="1" fill="#000"/><rect x="0" y="13" width="2" height="1" fill="#FF4D17"/><rect x="8" y="13" width="2" height="1" fill="#000"/><rect x="0" y="14" width="4" height="1" fill="#FF4D17"/><rect x="7" y="14" width="2" height="1" fill="#000"/><rect x="0" y="15" width="4" height="1" fill="#FF4D17"/><rect x="5" y="15" width="3" height="1" fill="#000"/><rect x="0" y="16" width="2" height="1" fill="#FF4D17"/><rect x="4" y="16" width="4" height="1" fill="#000"/><rect x="3" y="17" width="6" height="1" fill="#000"/><rect x="4" y="18" width="3" height="1" fill="#FF4D17"/></svg></div>
+  <div class="gutter-decor" style="top:1180px;left:-150px;opacity:0.95;transform:rotate(4deg)"><svg width="104" height="135" viewBox="0 0 20 26" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="0" width="4" height="1" fill="#000"/><rect x="7" y="1" width="6" height="1" fill="#000"/><rect x="7" y="2" width="1" height="1" fill="#000"/><rect x="8" y="2" width="4" height="1" fill="#FF4D17"/><rect x="12" y="2" width="1" height="1" fill="#000"/><rect x="7" y="3" width="1" height="1" fill="#000"/><rect x="8" y="3" width="4" height="1" fill="#FF4D17"/><rect x="12" y="3" width="1" height="1" fill="#000"/><rect x="7" y="4" width="6" height="1" fill="#000"/><rect x="6" y="5" width="8" height="1" fill="#000"/><rect x="5" y="6" width="1" height="1" fill="#000"/><rect x="8" y="6" width="4" height="1" fill="#000"/><rect x="14" y="6" width="1" height="1" fill="#000"/><rect x="4" y="7" width="2" height="1" fill="#000"/><rect x="8" y="7" width="4" height="1" fill="#000"/><rect x="14" y="7" width="2" height="1" fill="#000"/><rect x="3" y="8" width="2" height="1" fill="#000"/><rect x="8" y="8" width="4" height="1" fill="#000"/><rect x="15" y="8" width="2" height="1" fill="#000"/><rect x="2" y="9" width="2" height="1" fill="#000"/><rect x="8" y="9" width="4" height="1" fill="#000"/><rect x="16" y="9" width="2" height="1" fill="#000"/><rect x="1" y="10" width="2" height="1" fill="#000"/><rect x="8" y="10" width="4" height="1" fill="#000"/><rect x="17" y="10" width="2" height="1" fill="#000"/><rect x="1" y="11" width="1" height="1" fill="#000"/><rect x="8" y="11" width="4" height="1" fill="#000"/><rect x="18" y="11" width="1" height="1" fill="#000"/><rect x="1" y="12" width="1" height="1" fill="#000"/><rect x="7" y="12" width="6" height="1" fill="#000"/><rect x="18" y="12" width="1" height="1" fill="#000"/><rect x="1" y="13" width="1" height="1" fill="#000"/><rect x="7" y="13" width="1" height="1" fill="#000"/><rect x="8" y="13" width="4" height="1" fill="#FF4D17"/><rect x="12" y="13" width="1" height="1" fill="#000"/><rect x="18" y="13" width="1" height="1" fill="#000"/><rect x="1" y="14" width="1" height="1" fill="#000"/><rect x="7" y="14" width="1" height="1" fill="#000"/><rect x="8" y="14" width="4" height="1" fill="#FF4D17"/><rect x="12" y="14" width="1" height="1" fill="#000"/><rect x="18" y="14" width="1" height="1" fill="#000"/><rect x="1" y="15" width="1" height="1" fill="#000"/><rect x="7" y="15" width="6" height="1" fill="#000"/><rect x="18" y="15" width="1" height="1" fill="#000"/><rect x="1" y="16" width="1" height="1" fill="#000"/><rect x="6" y="16" width="8" height="1" fill="#000"/><rect x="18" y="16" width="1" height="1" fill="#000"/><rect x="1" y="17" width="1" height="1" fill="#000"/><rect x="6" y="17" width="1" height="1" fill="#000"/><rect x="13" y="17" width="1" height="1" fill="#000"/><rect x="18" y="17" width="1" height="1" fill="#000"/><rect x="1" y="18" width="1" height="1" fill="#000"/><rect x="6" y="18" width="1" height="1" fill="#000"/><rect x="13" y="18" width="1" height="1" fill="#000"/><rect x="18" y="18" width="1" height="1" fill="#000"/><rect x="1" y="19" width="1" height="1" fill="#000"/><rect x="6" y="19" width="1" height="1" fill="#000"/><rect x="13" y="19" width="1" height="1" fill="#000"/><rect x="18" y="19" width="1" height="1" fill="#000"/><rect x="1" y="20" width="1" height="1" fill="#000"/><rect x="6" y="20" width="1" height="1" fill="#000"/><rect x="13" y="20" width="1" height="1" fill="#000"/><rect x="18" y="20" width="1" height="1" fill="#000"/><rect x="1" y="21" width="1" height="1" fill="#000"/><rect x="6" y="21" width="8" height="1" fill="#000"/><rect x="18" y="21" width="1" height="1" fill="#000"/><rect x="1" y="22" width="1" height="1" fill="#000"/><rect x="5" y="22" width="2" height="1" fill="#000"/><rect x="13" y="22" width="2" height="1" fill="#000"/><rect x="18" y="22" width="1" height="1" fill="#000"/><rect x="5" y="23" width="2" height="1" fill="#000"/><rect x="13" y="23" width="2" height="1" fill="#000"/><rect x="4" y="24" width="4" height="1" fill="#000"/><rect x="12" y="24" width="4" height="1" fill="#000"/><rect x="5" y="25" width="2" height="1" fill="#000"/><rect x="13" y="25" width="2" height="1" fill="#000"/></svg></div>
+  <div class="gutter-decor" style="top:1320px;right:-150px;opacity:0.85;transform:rotate(22deg)"><svg width="60" height="41" viewBox="0 0 16 11" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="0" width="8" height="1" fill="#000"/><rect x="2" y="1" width="12" height="1" fill="#000"/><rect x="1" y="2" width="14" height="1" fill="#000"/><rect x="0" y="3" width="16" height="1" fill="#FF4D17"/><rect x="0" y="4" width="16" height="1" fill="#000"/><rect x="0" y="5" width="16" height="1" fill="#000"/><rect x="0" y="6" width="16" height="1" fill="#000"/><rect x="0" y="7" width="16" height="1" fill="#000"/><rect x="1" y="8" width="14" height="1" fill="#000"/><rect x="2" y="9" width="12" height="1" fill="#000"/><rect x="4" y="10" width="8" height="1" fill="#000"/></svg></div>
+  <div class="gutter-decor" style="top:1620px;left:-150px;opacity:0.85;transform:rotate(-5deg)"><svg width="112" height="60" viewBox="0 0 28 15" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="1" height="1" fill="#FF4D17"/><rect x="1" y="0" width="24" height="1" fill="#000"/><rect x="25" y="0" width="1" height="1" fill="#FF4D17"/><rect x="0" y="1" width="2" height="1" fill="#000"/><rect x="26" y="1" width="2" height="1" fill="#000"/><rect x="0" y="2" width="1" height="1" fill="#000"/><rect x="2" y="2" width="1" height="1" fill="#808080"/><rect x="4" y="2" width="1" height="1" fill="#808080"/><rect x="6" y="2" width="1" height="1" fill="#808080"/><rect x="8" y="2" width="1" height="1" fill="#808080"/><rect x="10" y="2" width="1" height="1" fill="#808080"/><rect x="12" y="2" width="1" height="1" fill="#808080"/><rect x="14" y="2" width="1" height="1" fill="#808080"/><rect x="16" y="2" width="1" height="1" fill="#808080"/><rect x="18" y="2" width="1" height="1" fill="#808080"/><rect x="20" y="2" width="1" height="1" fill="#808080"/><rect x="22" y="2" width="1" height="1" fill="#808080"/><rect x="24" y="2" width="1" height="1" fill="#808080"/><rect x="26" y="2" width="1" height="1" fill="#000"/><rect x="0" y="3" width="1" height="1" fill="#000"/><rect x="26" y="3" width="1" height="1" fill="#000"/><rect x="0" y="4" width="1" height="1" fill="#000"/><rect x="2" y="4" width="1" height="1" fill="#808080"/><rect x="4" y="4" width="1" height="1" fill="#808080"/><rect x="6" y="4" width="1" height="1" fill="#808080"/><rect x="8" y="4" width="1" height="1" fill="#808080"/><rect x="10" y="4" width="1" height="1" fill="#808080"/><rect x="12" y="4" width="1" height="1" fill="#808080"/><rect x="14" y="4" width="1" height="1" fill="#808080"/><rect x="16" y="4" width="1" height="1" fill="#808080"/><rect x="18" y="4" width="1" height="1" fill="#808080"/><rect x="20" y="4" width="1" height="1" fill="#808080"/><rect x="22" y="4" width="1" height="1" fill="#808080"/><rect x="24" y="4" width="1" height="1" fill="#808080"/><rect x="26" y="4" width="1" height="1" fill="#000"/><rect x="0" y="5" width="1" height="1" fill="#000"/><rect x="26" y="5" width="1" height="1" fill="#000"/><rect x="0" y="6" width="1" height="1" fill="#000"/><rect x="2" y="6" width="1" height="1" fill="#808080"/><rect x="4" y="6" width="1" height="1" fill="#808080"/><rect x="6" y="6" width="1" height="1" fill="#808080"/><rect x="8" y="6" width="1" height="1" fill="#808080"/><rect x="10" y="6" width="1" height="1" fill="#808080"/><rect x="12" y="6" width="1" height="1" fill="#808080"/><rect x="14" y="6" width="1" height="1" fill="#808080"/><rect x="16" y="6" width="1" height="1" fill="#808080"/><rect x="18" y="6" width="1" height="1" fill="#808080"/><rect x="20" y="6" width="1" height="1" fill="#808080"/><rect x="22" y="6" width="1" height="1" fill="#808080"/><rect x="24" y="6" width="1" height="1" fill="#808080"/><rect x="26" y="6" width="1" height="1" fill="#000"/><rect x="0" y="7" width="1" height="1" fill="#000"/><rect x="26" y="7" width="1" height="1" fill="#000"/><rect x="0" y="8" width="1" height="1" fill="#000"/><rect x="2" y="8" width="1" height="1" fill="#808080"/><rect x="4" y="8" width="1" height="1" fill="#808080"/><rect x="6" y="8" width="1" height="1" fill="#808080"/><rect x="8" y="8" width="1" height="1" fill="#808080"/><rect x="10" y="8" width="1" height="1" fill="#808080"/><rect x="12" y="8" width="1" height="1" fill="#808080"/><rect x="14" y="8" width="1" height="1" fill="#808080"/><rect x="16" y="8" width="1" height="1" fill="#808080"/><rect x="18" y="8" width="1" height="1" fill="#808080"/><rect x="20" y="8" width="1" height="1" fill="#808080"/><rect x="22" y="8" width="1" height="1" fill="#808080"/><rect x="24" y="8" width="1" height="1" fill="#808080"/><rect x="26" y="8" width="1" height="1" fill="#000"/><rect x="0" y="9" width="1" height="1" fill="#000"/><rect x="26" y="9" width="1" height="1" fill="#000"/><rect x="0" y="10" width="1" height="1" fill="#000"/><rect x="2" y="10" width="1" height="1" fill="#808080"/><rect x="4" y="10" width="1" height="1" fill="#808080"/><rect x="6" y="10" width="1" height="1" fill="#808080"/><rect x="8" y="10" width="1" height="1" fill="#808080"/><rect x="10" y="10" width="1" height="1" fill="#808080"/><rect x="12" y="10" width="1" height="1" fill="#808080"/><rect x="14" y="10" width="1" height="1" fill="#808080"/><rect x="16" y="10" width="1" height="1" fill="#808080"/><rect x="18" y="10" width="1" height="1" fill="#808080"/><rect x="20" y="10" width="1" height="1" fill="#808080"/><rect x="22" y="10" width="1" height="1" fill="#808080"/><rect x="24" y="10" width="1" height="1" fill="#808080"/><rect x="26" y="10" width="1" height="1" fill="#000"/><rect x="0" y="11" width="1" height="1" fill="#000"/><rect x="26" y="11" width="1" height="1" fill="#000"/><rect x="0" y="12" width="1" height="1" fill="#000"/><rect x="2" y="12" width="1" height="1" fill="#808080"/><rect x="4" y="12" width="1" height="1" fill="#808080"/><rect x="6" y="12" width="1" height="1" fill="#808080"/><rect x="8" y="12" width="1" height="1" fill="#808080"/><rect x="10" y="12" width="1" height="1" fill="#808080"/><rect x="12" y="12" width="1" height="1" fill="#808080"/><rect x="14" y="12" width="1" height="1" fill="#808080"/><rect x="16" y="12" width="1" height="1" fill="#808080"/><rect x="18" y="12" width="1" height="1" fill="#808080"/><rect x="20" y="12" width="1" height="1" fill="#808080"/><rect x="22" y="12" width="1" height="1" fill="#808080"/><rect x="24" y="12" width="1" height="1" fill="#808080"/><rect x="26" y="12" width="1" height="1" fill="#000"/><rect x="0" y="13" width="2" height="1" fill="#000"/><rect x="26" y="13" width="2" height="1" fill="#000"/><rect x="0" y="14" width="1" height="1" fill="#FF4D17"/><rect x="1" y="14" width="24" height="1" fill="#000"/><rect x="25" y="14" width="1" height="1" fill="#FF4D17"/></svg></div>
+  <div class="gutter-decor" style="top:2000px;left:-150px;opacity:0.92;transform:rotate(-12deg)"><svg width="58" height="83" viewBox="0 0 14 20" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="0" width="6" height="1" fill="#000"/><rect x="3" y="1" width="8" height="1" fill="#000"/><rect x="2" y="2" width="2" height="1" fill="#000"/><rect x="4" y="2" width="6" height="1" fill="#FF4D17"/><rect x="10" y="2" width="2" height="1" fill="#000"/><rect x="1" y="3" width="1" height="1" fill="#000"/><rect x="2" y="3" width="10" height="1" fill="#FF4D17"/><rect x="12" y="3" width="1" height="1" fill="#000"/><rect x="1" y="4" width="1" height="1" fill="#000"/><rect x="2" y="4" width="10" height="1" fill="#FF4D17"/><rect x="12" y="4" width="1" height="1" fill="#000"/><rect x="0" y="5" width="1" height="1" fill="#000"/><rect x="1" y="5" width="12" height="1" fill="#FF4D17"/><rect x="13" y="5" width="1" height="1" fill="#000"/><rect x="0" y="6" width="1" height="1" fill="#000"/><rect x="1" y="6" width="12" height="1" fill="#FF4D17"/><rect x="13" y="6" width="1" height="1" fill="#000"/><rect x="0" y="7" width="1" height="1" fill="#000"/><rect x="1" y="7" width="12" height="1" fill="#FF4D17"/><rect x="13" y="7" width="1" height="1" fill="#000"/><rect x="1" y="8" width="1" height="1" fill="#000"/><rect x="2" y="8" width="10" height="1" fill="#FF4D17"/><rect x="12" y="8" width="1" height="1" fill="#000"/><rect x="1" y="9" width="1" height="1" fill="#000"/><rect x="2" y="9" width="10" height="1" fill="#FF4D17"/><rect x="12" y="9" width="1" height="1" fill="#000"/><rect x="2" y="10" width="2" height="1" fill="#000"/><rect x="4" y="10" width="6" height="1" fill="#FF4D17"/><rect x="10" y="10" width="2" height="1" fill="#000"/><rect x="3" y="11" width="8" height="1" fill="#000"/><rect x="4" y="12" width="6" height="1" fill="#000"/><rect x="5" y="13" width="4" height="1" fill="#000"/><rect x="6" y="14" width="2" height="1" fill="#000"/><rect x="6" y="15" width="2" height="1" fill="#000"/><rect x="5" y="16" width="4" height="1" fill="#000"/><rect x="4" y="17" width="6" height="1" fill="#000"/><rect x="3" y="18" width="8" height="1" fill="#000"/><rect x="3" y="19" width="8" height="1" fill="#000"/></svg></div>
+  <div class="gutter-decor" style="top:1900px;right:-150px;opacity:0.95;transform:rotate(6deg)"><svg width="92" height="123" viewBox="0 0 21 28" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="0" width="4" height="1" fill="#000"/><rect x="9" y="1" width="6" height="1" fill="#000"/><rect x="9" y="2" width="1" height="1" fill="#000"/><rect x="10" y="2" width="4" height="1" fill="#FF4D17"/><rect x="14" y="2" width="1" height="1" fill="#000"/><rect x="9" y="3" width="6" height="1" fill="#000"/><rect x="10" y="4" width="4" height="1" fill="#000"/><rect x="8" y="5" width="3" height="1" fill="#000"/><rect x="7" y="6" width="4" height="1" fill="#000"/><rect x="16" y="6" width="2" height="1" fill="#000"/><rect x="6" y="7" width="6" height="1" fill="#000"/><rect x="15" y="7" width="2" height="1" fill="#000"/><rect x="5" y="8" width="3" height="1" fill="#000"/><rect x="10" y="8" width="2" height="1" fill="#000"/><rect x="14" y="8" width="2" height="1" fill="#000"/><rect x="4" y="9" width="2" height="1" fill="#000"/><rect x="11" y="9" width="4" height="1" fill="#000"/><rect x="3" y="10" width="2" height="1" fill="#000"/><rect x="10" y="10" width="6" height="1" fill="#000"/><rect x="2" y="11" width="2" height="1" fill="#000"/><rect x="9" y="11" width="3" height="1" fill="#000"/><rect x="14" y="11" width="2" height="1" fill="#000"/><rect x="1" y="12" width="2" height="1" fill="#000"/><rect x="8" y="12" width="3" height="1" fill="#000"/><rect x="15" y="12" width="2" height="1" fill="#000"/><rect x="1" y="13" width="1" height="1" fill="#000"/><rect x="2" y="13" width="3" height="1" fill="#FF4D17"/><rect x="7" y="13" width="3" height="1" fill="#000"/><rect x="16" y="13" width="2" height="1" fill="#000"/><rect x="1" y="14" width="1" height="1" fill="#000"/><rect x="2" y="14" width="5" height="1" fill="#FF4D17"/><rect x="7" y="14" width="2" height="1" fill="#000"/><rect x="17" y="14" width="1" height="1" fill="#000"/><rect x="1" y="15" width="1" height="1" fill="#000"/><rect x="2" y="15" width="5" height="1" fill="#FF4D17"/><rect x="7" y="15" width="1" height="1" fill="#000"/><rect x="17" y="15" width="1" height="1" fill="#000"/><rect x="1" y="16" width="1" height="1" fill="#000"/><rect x="2" y="16" width="5" height="1" fill="#FF4D17"/><rect x="7" y="16" width="1" height="1" fill="#000"/><rect x="17" y="16" width="1" height="1" fill="#000"/><rect x="1" y="17" width="5" height="1" fill="#000"/><rect x="7" y="17" width="1" height="1" fill="#000"/><rect x="1" y="18" width="1" height="1" fill="#000"/><rect x="5" y="18" width="3" height="1" fill="#000"/><rect x="1" y="19" width="1" height="1" fill="#000"/><rect x="5" y="19" width="1" height="1" fill="#000"/><rect x="7" y="19" width="2" height="1" fill="#000"/><rect x="1" y="20" width="1" height="1" fill="#000"/><rect x="5" y="20" width="1" height="1" fill="#000"/><rect x="8" y="20" width="2" height="1" fill="#000"/><rect x="0" y="21" width="1" height="1" fill="#000"/><rect x="5" y="21" width="1" height="1" fill="#000"/><rect x="9" y="21" width="2" height="1" fill="#000"/><rect x="0" y="22" width="1" height="1" fill="#000"/><rect x="5" y="22" width="1" height="1" fill="#000"/><rect x="10" y="22" width="2" height="1" fill="#000"/><rect x="1" y="23" width="1" height="1" fill="#000"/><rect x="5" y="23" width="1" height="1" fill="#000"/><rect x="11" y="23" width="1" height="1" fill="#000"/><rect x="1" y="24" width="2" height="1" fill="#000"/><rect x="4" y="24" width="2" height="1" fill="#000"/><rect x="11" y="24" width="2" height="1" fill="#000"/><rect x="1" y="25" width="5" height="1" fill="#000"/><rect x="10" y="25" width="4" height="1" fill="#000"/><rect x="0" y="26" width="1" height="1" fill="#FF4D17"/><rect x="1" y="26" width="1" height="1" fill="#000"/><rect x="5" y="26" width="1" height="1" fill="#000"/><rect x="6" y="26" width="1" height="1" fill="#FF4D17"/><rect x="9" y="26" width="1" height="1" fill="#FF4D17"/><rect x="10" y="26" width="1" height="1" fill="#000"/><rect x="13" y="26" width="1" height="1" fill="#000"/><rect x="14" y="26" width="1" height="1" fill="#FF4D17"/><rect x="1" y="27" width="5" height="1" fill="#000"/><rect x="10" y="27" width="4" height="1" fill="#000"/></svg></div>
+  <div class="gutter-decor" style="top:2360px;left:-150px;opacity:0.9;transform:rotate(180deg)"><svg width="96" height="83" viewBox="0 0 22 19" xmlns="http://www.w3.org/2000/svg"><rect x="21" y="0" width="1" height="1" fill="#000"/><rect x="20" y="1" width="2" height="1" fill="#000"/><rect x="19" y="2" width="2" height="1" fill="#000"/><rect x="18" y="3" width="2" height="1" fill="#000"/><rect x="17" y="4" width="2" height="1" fill="#000"/><rect x="16" y="5" width="2" height="1" fill="#000"/><rect x="15" y="6" width="2" height="1" fill="#000"/><rect x="14" y="7" width="2" height="1" fill="#000"/><rect x="13" y="8" width="2" height="1" fill="#000"/><rect x="12" y="9" width="2" height="1" fill="#000"/><rect x="11" y="10" width="2" height="1" fill="#000"/><rect x="10" y="11" width="2" height="1" fill="#000"/><rect x="9" y="12" width="2" height="1" fill="#000"/><rect x="0" y="13" width="2" height="1" fill="#FF4D17"/><rect x="8" y="13" width="2" height="1" fill="#000"/><rect x="0" y="14" width="4" height="1" fill="#FF4D17"/><rect x="7" y="14" width="2" height="1" fill="#000"/><rect x="0" y="15" width="4" height="1" fill="#FF4D17"/><rect x="5" y="15" width="3" height="1" fill="#000"/><rect x="0" y="16" width="2" height="1" fill="#FF4D17"/><rect x="4" y="16" width="4" height="1" fill="#000"/><rect x="3" y="17" width="6" height="1" fill="#000"/><rect x="4" y="18" width="3" height="1" fill="#FF4D17"/></svg></div>
+  <div class="gutter-decor" style="top:2300px;right:-150px;opacity:0.88;transform:rotate(-18deg)"><svg width="70" height="48" viewBox="0 0 16 11" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="0" width="8" height="1" fill="#000"/><rect x="2" y="1" width="12" height="1" fill="#000"/><rect x="1" y="2" width="14" height="1" fill="#000"/><rect x="0" y="3" width="16" height="1" fill="#FF4D17"/><rect x="0" y="4" width="16" height="1" fill="#000"/><rect x="0" y="5" width="16" height="1" fill="#000"/><rect x="0" y="6" width="16" height="1" fill="#000"/><rect x="0" y="7" width="16" height="1" fill="#000"/><rect x="1" y="8" width="14" height="1" fill="#000"/><rect x="2" y="9" width="12" height="1" fill="#000"/><rect x="4" y="10" width="8" height="1" fill="#000"/></svg></div>
+</div>
+
+  <!-- Lead -->
+  <section class="lead">
+    <h1>Shot map · expected vs actual goals</h1>
+    <div class="meta">Offensive zone view · x=0 center ice → x=89 goal line → x=100 end boards</div>
+  </section>
+
+  <!-- §1 / SHOT MAP -->
+  <div class="section-label">
+    <svg class="ico sec-ico" viewBox="0 0 16 16"><rect x="5" y="4"  width="6"  height="1" fill="#000"/>
+      <rect x="4" y="5"  width="8"  height="1" fill="#000"/>
+      <rect x="3" y="6"  width="10" height="2" fill="#000"/>
+      <rect x="3" y="8"  width="10" height="1" fill="#FF4D17"/>
+      <rect x="3" y="9"  width="10" height="1" fill="#000"/>
+      <rect x="4" y="10" width="8"  height="1" fill="#000"/>
+      <rect x="5" y="11" width="6"  height="1" fill="#000"/></svg>
+    §1 / SHOT MAP
+    <svg class="ico sec-ico sec-ico-end" viewBox="0 0 16 16"><rect x="3"  y="4"  width="10" height="1" fill="#000"/>
+      <rect x="3"  y="4"  width="1"  height="9" fill="#000"/>
+      <rect x="12" y="4"  width="1"  height="9" fill="#000"/>
+      <rect x="3"  y="12" width="10" height="1" fill="#000"/>
+      <rect x="6"  y="5"  width="1"  height="7" fill="#808080"/>
+      <rect x="9"  y="5"  width="1"  height="7" fill="#808080"/>
+      <rect x="4"  y="7"  width="8"  height="1" fill="#808080"/>
+      <rect x="4"  y="10" width="8"  height="1" fill="#808080"/>
+      <rect x="3"  y="4"  width="2"  height="1" fill="#FF4D17"/></svg>
   </div>
-  <div class="ctrl-group">
-    <div class="ctrl-label">Team (Shooting)</div>
-    <select id="selTeam" onchange="applyAllFilters()">
-      <option value="ALL">All Teams</option>
-    </select>
-  </div>
-  <div class="ctrl-group">
-    <div class="ctrl-label">Situation</div>
-    <select id="selSituation" onchange="applyAllFilters()">
-      <option value="ALL">All</option>
-      <option value="5v5">5v5</option>
-      <option value="PP">Power Play</option>
-      <option value="PK">Penalty Kill</option>
-    </select>
-  </div>
-  <div class="ctrl-group">
-    <div class="ctrl-label">Shot Events</div>
-    <div class="btn-group">
-      <button id="btnAll"  class="active" onclick="setFilter('ALL')">All</button>
-      <button id="btnShot" onclick="setFilter('SHOT')">On Goal</button>
-      <button id="btnGoal" onclick="setFilter('GOAL')">Goals</button>
-      <button id="btnMiss" onclick="setFilter('MISS')">Missed</button>
+  <hr class="section-rule">
+
+  <div class="controls">
+    <div class="ctrl-group">
+      <div class="ctrl-label">Season</div>
+      <select id="selSeason" onchange="applyAllFilters()">
+        <option value="ALL">All seasons</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <div class="ctrl-label">Team</div>
+      <select id="selTeam" onchange="applyAllFilters()">
+        <option value="ALL">All teams</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <div class="ctrl-label">Situation</div>
+      <select id="selSituation" onchange="applyAllFilters()">
+        <option value="ALL">All</option>
+        <option value="5v5">5v5</option>
+        <option value="PP">Power play</option>
+        <option value="PK">Penalty kill</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <div class="ctrl-label">Shot events</div>
+      <div class="btn-group">
+        <button id="btnAll"  class="active" onclick="setFilter('ALL')">All</button>
+        <button id="btnShot" onclick="setFilter('SHOT')">On goal</button>
+        <button id="btnGoal" onclick="setFilter('GOAL')">Goals</button>
+        <button id="btnMiss" onclick="setFilter('MISS')">Missed</button>
+      </div>
+    </div>
+    <div class="ctrl-group">
+      <div class="ctrl-label">Heat mode</div>
+      <div class="btn-group">
+        <button id="btnCount" class="active" onclick="setMode('count')">Count</button>
+        <button id="btnXG"    onclick="setMode('xg')">xGoal</button>
+        <button id="btnGR"    onclick="setMode('gr')">Goal rate</button>
+      </div>
     </div>
   </div>
-  <div class="ctrl-group">
-    <div class="ctrl-label">Heat Mode</div>
-    <div class="btn-group">
-      <button id="btnCount" class="active" onclick="setMode('count')">Count</button>
-      <button id="btnXG"    onclick="setMode('xg')">xGoal</button>
-      <button id="btnGR"    onclick="setMode('gr')">Goal Rate</button>
+
+  <div id="filterBadge" class="filter-badge" style="display:none">
+    <span id="filterText"></span>
+    <span class="badge-clear" onclick="clearPlayerFilter()" title="Clear player filter">×</span>
+  </div>
+
+  <!-- Rink -->
+  <div class="rink-block">
+    <canvas id="rulerCanvas" width="840" height="38"></canvas>
+    <div class="canvas-stack" id="canvasStack">
+      <svg id="rinkSvg" viewBox="0 0 840 714" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#000000" stroke-width="0.6"/>
+          </pattern>
+        </defs>
+        <!-- Ice -->
+        <rect x="0" y="0" width="840" height="714" fill="#FFFFFF"/>
+        <!-- Neutral zone tint -->
+        <rect x="0" y="0" width="208" height="714" fill="#F0F0F0"/>
+        <!-- Behind net hatch -->
+        <rect x="748" y="0" width="92" height="714" fill="url(#hatch)" opacity="0.18"/>
+        <!-- Outer boards -->
+        <line x1="2" y1="0" x2="773" y2="0" stroke="#000000" stroke-width="1.5"/>
+        <line x1="2" y1="714" x2="773" y2="714" stroke="#000000" stroke-width="1.5"/>
+        <path d="M 773 0 Q 840 0 840 88" fill="none" stroke="#000000" stroke-width="1.5"/>
+        <path d="M 773 714 Q 840 714 840 626" fill="none" stroke="#000000" stroke-width="1.5"/>
+        <line x1="840" y1="88" x2="840" y2="626" stroke="#000000" stroke-width="1.5"/>
+        <!-- Center line (left edge) -->
+        <line x1="2" y1="0" x2="2" y2="714" stroke="#000000" stroke-width="1.5"/>
+        <!-- Blue line -->
+        <line x1="210" y1="0" x2="210" y2="714" stroke="#000000" stroke-width="1.5"/>
+        <!-- Goal line -->
+        <line x1="748" y1="0" x2="748" y2="714" stroke="#000000" stroke-width="1.5"/>
+        <!-- Neutral zone faceoff dots — 5ft from blue line on neutral side, ±22ft from centerline -->
+        <circle cx="168" cy="172" r="3.5" fill="#000000"/>
+        <circle cx="168" cy="542" r="3.5" fill="#000000"/>
+        <!-- OZ faceoff dots + circles -->
+        <circle cx="580" cy="172" r="4" fill="#000000"/>
+        <circle cx="580" cy="542" r="4" fill="#000000"/>
+        <circle cx="580" cy="172" r="126" fill="none" stroke="#000000" stroke-width="1"/>
+        <circle cx="580" cy="542" r="126" fill="none" stroke="#000000" stroke-width="1"/>
+        <!-- Hash marks -->
+        <line x1="556" y1="135" x2="580" y2="135" stroke="#000000" stroke-width="1"/>
+        <line x1="556" y1="209" x2="580" y2="209" stroke="#000000" stroke-width="1"/>
+        <line x1="604" y1="135" x2="580" y2="135" stroke="#000000" stroke-width="1"/>
+        <line x1="604" y1="209" x2="580" y2="209" stroke="#000000" stroke-width="1"/>
+        <line x1="556" y1="505" x2="580" y2="505" stroke="#000000" stroke-width="1"/>
+        <line x1="556" y1="579" x2="580" y2="579" stroke="#000000" stroke-width="1"/>
+        <line x1="604" y1="505" x2="580" y2="505" stroke="#000000" stroke-width="1"/>
+        <line x1="604" y1="579" x2="580" y2="579" stroke="#000000" stroke-width="1"/>
+        <!-- Crease -->
+        <path d="M 748 332 Q 697 332 697 357 Q 697 382 748 382" fill="#F0F0F0" stroke="#000000" stroke-width="1"/>
+        <!-- Net -->
+        <rect x="748" y="332" width="22" height="50" fill="none" stroke="#000000" stroke-width="1"/>
+        <line x1="757" y1="332" x2="757" y2="382" stroke="#808080" stroke-width="0.5"/>
+        <line x1="765" y1="332" x2="765" y2="382" stroke="#808080" stroke-width="0.5"/>
+        <line x1="748" y1="345" x2="770" y2="345" stroke="#808080" stroke-width="0.5"/>
+        <line x1="748" y1="358" x2="770" y2="358" stroke="#808080" stroke-width="0.5"/>
+        <line x1="748" y1="370" x2="770" y2="370" stroke="#808080" stroke-width="0.5"/>
+        <!-- Slot reference -->
+        <rect x="580" y="231" width="168" height="252" fill="none" stroke="#000000" stroke-width="0.5" stroke-dasharray="3 3" opacity="0.35"/>
+        <text x="585" y="246" font-family="JetBrains Mono" font-size="9" fill="#808080" letter-spacing="1.2">[ SLOT ]</text>
+        <!-- Zone labels -->
+        <text x="8"   y="708" font-family="JetBrains Mono" font-size="9" fill="#808080" letter-spacing="1">NEUTRAL · 25FT</text>
+        <text x="350" y="708" font-family="JetBrains Mono" font-size="9" fill="#808080" letter-spacing="1">OFFENSIVE ZONE · 64FT</text>
+        <text x="752" y="708" font-family="JetBrains Mono" font-size="9" fill="#808080" letter-spacing="1">BEHIND NET</text>
+      </svg>
+      <canvas id="heatCanvas" width="840" height="714"></canvas>
+      <canvas id="dotCanvas"  width="840" height="714"></canvas>
+      <canvas id="hoverOverlay" width="840" height="714"
+        onmousemove="handleRinkHover(event)" onmouseleave="hideTooltip()"></canvas>
     </div>
   </div>
-</div>
 
-<div id="filterBadge" class="filter-badge" style="display:none">
-  <span id="filterText"></span>
-  <span class="badge-clear" onclick="clearPlayerFilter()" title="Clear player filter">✕</span>
-</div>
-
-<!-- Ruler + rink block — DIMENSIONS UNCHANGED -->
-<div class="rink-block">
-  <canvas id="rulerCanvas" width="840" height="38"></canvas>
-  <div class="canvas-stack" id="canvasStack">
-    <svg id="rinkSvg" viewBox="0 0 840 714" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <filter id="grain">
-          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
-          <feColorMatrix type="saturate" values="0"/>
-          <feBlend in="SourceGraphic" mode="multiply" result="blend"/>
-          <feComposite in="blend" in2="SourceGraphic" operator="in"/>
-        </filter>
-        <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
-          <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(180,130,80,0.18)" stroke-width="3"/>
-        </pattern>
-      </defs>
-      <!-- Ice -->
-      <rect x="0" y="0" width="840" height="714" fill="#cce8f5"/>
-      <rect x="0" y="0" width="840" height="714" fill="url(#grain)" opacity="0.04"/>
-      <!-- Zone tints -->
-      <rect x="0" y="0" width="210" height="714" fill="rgba(80,110,200,0.04)"/>
-      <rect x="748" y="0" width="92" height="714" fill="url(#hatch)"/>
-      <rect x="748" y="0" width="92" height="714" fill="rgba(160,110,50,0.06)"/>
-      <!-- Center line -->
-      <line x1="2" y1="0" x2="2" y2="714" stroke="#cc2222" stroke-width="4"/>
-      <!-- Neutral zone faceoff dots -->
-      <circle cx="42" cy="172" r="5" fill="#cc2222"/>
-      <circle cx="42" cy="542" r="5" fill="#cc2222"/>
-      <!-- Blue line -->
-      <rect x="208" y="0" width="4" height="714" fill="#1a44cc"/>
-      <!-- OZ faceoff dots + circles -->
-      <circle cx="580" cy="172" r="6" fill="#cc2222"/>
-      <circle cx="580" cy="542" r="6" fill="#cc2222"/>
-      <circle cx="580" cy="172" r="126" fill="none" stroke="#cc2222" stroke-width="2" opacity="0.45"/>
-      <circle cx="580" cy="542" r="126" fill="none" stroke="#cc2222" stroke-width="2" opacity="0.45"/>
-      <!-- Hash marks -->
-      <line x1="553" y1="135" x2="580" y2="135" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
-      <line x1="553" y1="209" x2="580" y2="209" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
-      <line x1="607" y1="135" x2="580" y2="135" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
-      <line x1="607" y1="209" x2="580" y2="209" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
-      <line x1="553" y1="505" x2="580" y2="505" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
-      <line x1="553" y1="579" x2="580" y2="579" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
-      <line x1="607" y1="505" x2="580" y2="505" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
-      <line x1="607" y1="579" x2="580" y2="579" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
-      <!-- Goal line -->
-      <line x1="748" y1="0" x2="748" y2="714" stroke="#cc2222" stroke-width="3"/>
-      <!-- Crease -->
-      <path d="M 748 332 Q 697 332 697 357 Q 697 382 748 382" fill="rgba(0,60,200,0.12)" stroke="#cc2222" stroke-width="1.5"/>
-      <!-- Net -->
-      <rect x="748" y="332" width="25" height="50" fill="rgba(200,220,255,0.4)" stroke="#888" stroke-width="1.5" rx="2"/>
-      <line x1="748" y1="332" x2="748" y2="382" stroke="#ff2222" stroke-width="3.5"/>
-      <line x1="748" y1="340" x2="773" y2="340" stroke="#aaa" stroke-width="0.5"/>
-      <line x1="748" y1="349" x2="773" y2="349" stroke="#aaa" stroke-width="0.5"/>
-      <line x1="748" y1="357" x2="773" y2="357" stroke="#aaa" stroke-width="0.5"/>
-      <line x1="748" y1="365" x2="773" y2="365" stroke="#aaa" stroke-width="0.5"/>
-      <line x1="748" y1="374" x2="773" y2="374" stroke="#aaa" stroke-width="0.5"/>
-      <line x1="757" y1="332" x2="757" y2="382" stroke="#aaa" stroke-width="0.5"/>
-      <line x1="766" y1="332" x2="766" y2="382" stroke="#aaa" stroke-width="0.5"/>
-      <!-- Boards -->
-      <path d="M 773 0 Q 840 0 840 88 L 840 626 Q 840 714 773 714 L 748 714 L 748 0 Z" fill="rgba(180,220,240,0.2)" stroke="none"/>
-      <path d="M 773 0 Q 840 0 840 88" fill="none" stroke="#9ab" stroke-width="3"/>
-      <path d="M 840 626 Q 840 714 773 714" fill="none" stroke="#9ab" stroke-width="3"/>
-      <line x1="2" y1="0" x2="773" y2="0" stroke="#9ab" stroke-width="3"/>
-      <line x1="2" y1="714" x2="773" y2="714" stroke="#9ab" stroke-width="3"/>
-      <!-- Slot reference -->
-      <rect x="580" y="231" width="168" height="252" fill="none" stroke="rgba(255,255,200,0.15)" stroke-width="1" stroke-dasharray="4 4"/>
-      <text x="584" y="245" font-family="Barlow Condensed" font-size="9" fill="rgba(255,255,180,0.3)" letter-spacing="0.12em">SLOT</text>
-      <!-- Zone labels -->
-      <text x="8"   y="703" font-family="Barlow Condensed" font-size="10" fill="#6688bb" opacity="0.75">← Neutral Zone (25ft) →</text>
-      <text x="350" y="703" font-family="Barlow Condensed" font-size="10" fill="#55aa77" opacity="0.75">← Offensive Zone (64ft) →</text>
-      <text x="752" y="703" font-family="Barlow Condensed" font-size="9"  fill="#cc8833" opacity="0.75">Behind Net</text>
-    </svg>
-    <canvas id="heatCanvas" width="840" height="714"></canvas>
-    <canvas id="dotCanvas"  width="840" height="714"></canvas>
-    <canvas id="hoverOverlay" width="840" height="714"
-      onmousemove="handleRinkHover(event)" onmouseleave="hideTooltip()"></canvas>
+  <!-- Legend -->
+  <div class="legend-row">
+    <div class="legend-scale">
+      <span class="legend-label">Low</span>
+      <div class="legend-gradient"></div>
+      <span class="legend-label">High</span>
+    </div>
+    <div class="dot-legend">
+      <div class="dot-item"><span class="dot-square" style="background:#FF4D17"></span> Goal</div>
+      <div class="dot-item"><span class="dot-square" style="background:#000000;opacity:0.3"></span> Shot / miss</div>
+    </div>
   </div>
-</div>
 
-<div id="tooltip">
-  <div class="tt-name" id="ttName">–</div>
-  <hr class="tt-divider">
-  <div id="ttShotRows">
-  <div class="tt-row"><span class="tt-key">Shot type</span><span class="tt-val" id="ttType">–</span></div>
-  <div class="tt-row"><span class="tt-key">Distance</span><span class="tt-val" id="ttDist">–</span></div>
-  <div class="tt-row"><span class="tt-key">xGoal</span><span class="tt-val" id="ttXg">–</span></div>
-  <div class="tt-row"><span class="tt-key">Situation</span><span class="tt-val" id="ttSit">–</span></div>
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat"><div class="stat-value accent" id="statTotal">–</div><div class="stat-label"><svg class="ico stat-ico" viewBox="0 0 16 16"><rect x="5" y="4"  width="6"  height="1" fill="#000"/>
+      <rect x="4" y="5"  width="8"  height="1" fill="#000"/>
+      <rect x="3" y="6"  width="10" height="2" fill="#000"/>
+      <rect x="3" y="8"  width="10" height="1" fill="#FF4D17"/>
+      <rect x="3" y="9"  width="10" height="1" fill="#000"/>
+      <rect x="4" y="10" width="8"  height="1" fill="#000"/>
+      <rect x="5" y="11" width="6"  height="1" fill="#000"/></svg>Total shots</div></div>
+    <div class="stat"><div class="stat-value" id="statGoals">–</div><div class="stat-label"><svg class="ico stat-ico" viewBox="0 0 16 16"><rect x="3"  y="4"  width="10" height="1" fill="#000"/>
+      <rect x="3"  y="4"  width="1"  height="9" fill="#000"/>
+      <rect x="12" y="4"  width="1"  height="9" fill="#000"/>
+      <rect x="3"  y="12" width="10" height="1" fill="#000"/>
+      <rect x="6"  y="5"  width="1"  height="7" fill="#808080"/>
+      <rect x="9"  y="5"  width="1"  height="7" fill="#808080"/>
+      <rect x="4"  y="7"  width="8"  height="1" fill="#808080"/>
+      <rect x="4"  y="10" width="8"  height="1" fill="#808080"/>
+      <rect x="3"  y="4"  width="2"  height="1" fill="#FF4D17"/></svg>Goals</div></div>
+    <div class="stat"><div class="stat-value" id="statGR">–</div><div class="stat-label"><svg class="ico stat-ico" viewBox="0 0 16 16"><rect x="7"  y="2"  width="2" height="2" fill="#000"/>
+      <rect x="7"  y="3"  width="2" height="1" fill="#FF4D17"/>
+      <rect x="5"  y="4"  width="6" height="2" fill="#000"/>
+      <rect x="6"  y="4"  width="4" height="1" fill="#FF4D17"/>
+      <rect x="3"  y="5"  width="2" height="2" fill="#000"/>
+      <rect x="11" y="5"  width="2" height="2" fill="#000"/>
+      <rect x="5"  y="6"  width="2" height="5" fill="#000"/>
+      <rect x="9"  y="6"  width="2" height="5" fill="#000"/>
+      <rect x="5"  y="8"  width="2" height="1" fill="#FF4D17"/>
+      <rect x="9"  y="8"  width="2" height="1" fill="#FF4D17"/>
+      <rect x="4"  y="11" width="3" height="1" fill="#000"/>
+      <rect x="9"  y="11" width="3" height="1" fill="#000"/></svg>Goal rate</div></div>
+    <div class="stat"><div class="stat-value" id="statXG">–</div><div class="stat-label"><svg class="ico stat-ico" viewBox="0 0 16 16"><rect x="11" y="3"  width="2" height="2" fill="#000"/>
+      <rect x="10" y="4"  width="2" height="2" fill="#000"/>
+      <rect x="9"  y="5"  width="2" height="2" fill="#000"/>
+      <rect x="8"  y="6"  width="2" height="2" fill="#FF4D17"/>
+      <rect x="7"  y="7"  width="2" height="2" fill="#000"/>
+      <rect x="6"  y="8"  width="2" height="2" fill="#000"/>
+      <rect x="5"  y="9"  width="2" height="2" fill="#000"/>
+      <rect x="2"  y="11" width="6" height="2" fill="#000"/>
+      <rect x="2"  y="11" width="2" height="2" fill="#FF4D17"/></svg>Total xG</div></div>
+    <div class="stat"><div class="stat-value" id="statSOG">–</div><div class="stat-label"><svg class="ico stat-ico" viewBox="0 0 16 16"><rect x="5" y="4"  width="6"  height="1" fill="#000"/>
+      <rect x="4" y="5"  width="8"  height="1" fill="#000"/>
+      <rect x="3" y="6"  width="10" height="2" fill="#000"/>
+      <rect x="3" y="8"  width="10" height="1" fill="#FF4D17"/>
+      <rect x="3" y="9"  width="10" height="1" fill="#000"/>
+      <rect x="4" y="10" width="8"  height="1" fill="#000"/>
+      <rect x="5" y="11" width="6"  height="1" fill="#000"/></svg>Shots on goal</div></div>
+    <div class="stat"><div class="stat-value" id="statPlayers">–</div><div class="stat-label"><svg class="ico stat-ico" viewBox="0 0 16 16"><rect x="7"  y="2"  width="2" height="2" fill="#000"/>
+      <rect x="6"  y="4"  width="3" height="2" fill="#FF4D17"/>
+      <rect x="6"  y="6"  width="3" height="1" fill="#000"/>
+      <rect x="4"  y="5"  width="2" height="1" fill="#000"/>
+      <rect x="9"  y="5"  width="2" height="1" fill="#000"/>
+      <rect x="11" y="6"  width="1" height="1" fill="#000"/>
+      <rect x="12" y="7"  width="1" height="1" fill="#000"/>
+      <rect x="10" y="9"  width="4" height="1" fill="#000"/>
+      <rect x="6"  y="7"  width="1" height="3" fill="#000"/>
+      <rect x="8"  y="7"  width="2" height="2" fill="#000"/>
+      <rect x="4"  y="10" width="3" height="1" fill="#000"/>
+      <rect x="9"  y="9"  width="3" height="1" fill="#000"/></svg>Players</div></div>
   </div>
-  <hr class="tt-divider" id="ttPlayerDivider" style="display:none">
-  <div id="ttPlayerStats" style="display:none">
-    <div class="tt-row"><span class="tt-key">Season G / xG</span><span class="tt-val" id="ttPGxg">–</span></div>
-    <div class="tt-row"><span class="tt-key">G – xG</span><span class="tt-val" id="ttPDiff">–</span></div>
-    <div class="tt-row"><span class="tt-key">Shots / HD Shots</span><span class="tt-val" id="ttPShots">–</span></div>
+
+  <!-- Tooltip (shared) -->
+  <div id="tooltip">
+    <div class="tt-name" id="ttName">–</div>
+    <hr class="tt-divider">
+    <div id="ttShotRows">
+      <div class="tt-row"><span class="tt-key">Shot type</span><span class="tt-val" id="ttType">–</span></div>
+      <div class="tt-row"><span class="tt-key">Distance</span><span class="tt-val" id="ttDist">–</span></div>
+      <div class="tt-row"><span class="tt-key">xGoal</span><span class="tt-val" id="ttXg">–</span></div>
+      <div class="tt-row"><span class="tt-key">Situation</span><span class="tt-val" id="ttSit">–</span></div>
+    </div>
+    <hr class="tt-divider" id="ttPlayerDivider" style="display:none">
+    <div id="ttPlayerStats" style="display:none">
+      <div class="tt-row"><span class="tt-key">Season G / xG</span><span class="tt-val" id="ttPGxg">–</span></div>
+      <div class="tt-row"><span class="tt-key">G–xG</span><span class="tt-val" id="ttPDiff">–</span></div>
+      <div class="tt-row"><span class="tt-key">Shots / HD</span><span class="tt-val" id="ttPShots">–</span></div>
+    </div>
   </div>
-</div>
 
-<div class="legend-row">
-  <div class="legend-scale">
-    <span class="legend-label">Low</span>
-    <div class="legend-gradient"></div>
-    <span class="legend-label">High</span>
+  <!-- §2 / SHOOTING TALENT -->
+  <hr class="section-divider">
+  <div class="section-label">
+    <svg class="ico sec-ico" viewBox="0 0 16 16"><rect x="7"  y="2"  width="2" height="2" fill="#000"/>
+      <rect x="6"  y="4"  width="3" height="2" fill="#FF4D17"/>
+      <rect x="6"  y="6"  width="3" height="1" fill="#000"/>
+      <rect x="4"  y="5"  width="2" height="1" fill="#000"/>
+      <rect x="9"  y="5"  width="2" height="1" fill="#000"/>
+      <rect x="11" y="6"  width="1" height="1" fill="#000"/>
+      <rect x="12" y="7"  width="1" height="1" fill="#000"/>
+      <rect x="10" y="9"  width="4" height="1" fill="#000"/>
+      <rect x="6"  y="7"  width="1" height="3" fill="#000"/>
+      <rect x="8"  y="7"  width="2" height="2" fill="#000"/>
+      <rect x="4"  y="10" width="3" height="1" fill="#000"/>
+      <rect x="9"  y="9"  width="3" height="1" fill="#000"/></svg>
+    §2 / SHOOTING TALENT · PLAYER LEADERBOARD
+    <svg class="ico sec-ico sec-ico-end" viewBox="0 0 16 16"><rect x="11" y="3"  width="2" height="2" fill="#000"/>
+      <rect x="10" y="4"  width="2" height="2" fill="#000"/>
+      <rect x="9"  y="5"  width="2" height="2" fill="#000"/>
+      <rect x="8"  y="6"  width="2" height="2" fill="#FF4D17"/>
+      <rect x="7"  y="7"  width="2" height="2" fill="#000"/>
+      <rect x="6"  y="8"  width="2" height="2" fill="#000"/>
+      <rect x="5"  y="9"  width="2" height="2" fill="#000"/>
+      <rect x="2"  y="11" width="6" height="2" fill="#000"/>
+      <rect x="2"  y="11" width="2" height="2" fill="#FF4D17"/></svg>
   </div>
-  <div class="dot-legend">
-    <div class="dot-item"><div class="dot-circle" style="background:#ff4d4d;border:1px solid #fff2"></div> Goal</div>
-    <div class="dot-item"><div class="dot-circle" style="background:#00c2ff55;border:1px solid #fff2"></div> Shot / Miss</div>
+  <hr class="section-rule">
+
+  <div class="bottom-grid">
+    <!-- Scatter -->
+    <div class="chart-panel">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Goals vs expected goals</div>
+          <div class="chart-sub">Per player · current filters · click to isolate on rink</div>
+        </div>
+      </div>
+      <canvas id="scatterCanvas" height="240"></canvas>
+      <div class="scatter-footer">
+        <div class="item"><span class="dot-square" style="background:#000000"></span> Over xG</div>
+        <div class="item"><span class="dot-square" style="background:#808080"></span> Under xG</div>
+        <div class="item"><span class="dot-square" style="background:#FF4D17"></span> Selected</div>
+      </div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div class="chart-panel">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Player leaderboard</div>
+          <div class="chart-sub">Click row → filter rink · click header → sort</div>
+        </div>
+      </div>
+      <div class="leader-scroll">
+        <table class="leader-table" id="leaderTable">
+          <thead>
+            <tr>
+              <th onclick="sortLeader('name')">Player</th>
+              <th onclick="sortLeader('pos')">Pos</th>
+              <th class="right" onclick="sortLeader('goals')">G</th>
+              <th class="right" onclick="sortLeader('xGoals')">xG</th>
+              <th class="right" onclick="sortLeader('diff')">G–xG</th>
+              <th class="right" onclick="sortLeader('shots')">Shots</th>
+              <th class="right" onclick="sortLeader('hdShots')">HD</th>
+            </tr>
+          </thead>
+          <tbody id="leaderBody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
-</div>
 
-<div class="stats-bar">
-  <div class="stat"><div class="stat-value" id="statTotal">–</div><div class="stat-label">Total Shots</div></div>
-  <div class="stat"><div class="stat-value" id="statGoals">–</div><div class="stat-label">Goals</div></div>
-  <div class="stat"><div class="stat-value" id="statGR">–</div><div class="stat-label">Goal %</div></div>
-  <div class="stat"><div class="stat-value" id="statXG">–</div><div class="stat-label">Total xG</div></div>
-  <div class="stat"><div class="stat-value" id="statSOG">–</div><div class="stat-label">Shots on Goal</div></div>
-  <div class="stat"><div class="stat-value" id="statPlayers">–</div><div class="stat-label">Players</div></div>
-</div>
+  <!-- §3 / GOAL EXPECTANCY -->
+  <hr class="section-divider">
+  <div class="section-label">
+    <svg class="ico sec-ico" viewBox="0 0 16 16"><rect x="7"  y="2"  width="2" height="2" fill="#000"/>
+      <rect x="7"  y="3"  width="2" height="1" fill="#FF4D17"/>
+      <rect x="5"  y="4"  width="6" height="2" fill="#000"/>
+      <rect x="6"  y="4"  width="4" height="1" fill="#FF4D17"/>
+      <rect x="3"  y="5"  width="2" height="2" fill="#000"/>
+      <rect x="11" y="5"  width="2" height="2" fill="#000"/>
+      <rect x="5"  y="6"  width="2" height="5" fill="#000"/>
+      <rect x="9"  y="6"  width="2" height="5" fill="#000"/>
+      <rect x="5"  y="8"  width="2" height="1" fill="#FF4D17"/>
+      <rect x="9"  y="8"  width="2" height="1" fill="#FF4D17"/>
+      <rect x="4"  y="11" width="3" height="1" fill="#000"/>
+      <rect x="9"  y="11" width="3" height="1" fill="#000"/></svg>
+    §3 / GOAL EXPECTANCY BY DISTANCE
+    <svg class="ico sec-ico sec-ico-end" viewBox="0 0 16 16"><rect x="3"  y="4"  width="10" height="1" fill="#000"/>
+      <rect x="3"  y="4"  width="1"  height="9" fill="#000"/>
+      <rect x="12" y="4"  width="1"  height="9" fill="#000"/>
+      <rect x="3"  y="12" width="10" height="1" fill="#000"/>
+      <rect x="6"  y="5"  width="1"  height="7" fill="#808080"/>
+      <rect x="9"  y="5"  width="1"  height="7" fill="#808080"/>
+      <rect x="4"  y="7"  width="8"  height="1" fill="#808080"/>
+      <rect x="4"  y="10" width="8"  height="1" fill="#808080"/>
+      <rect x="3"  y="4"  width="2"  height="1" fill="#FF4D17"/></svg>
+  </div>
+  <hr class="section-rule">
 
-<div class="section-divider">
-  <div class="divider-line"></div>
-  <h2>Shooting Talent · Player Leaderboard</h2>
-  <div class="divider-line"></div>
-</div>
-
-<div class="bottom-grid">
-  <!-- Scatter -->
-  <div class="chart-panel">
+  <div class="chart-panel-wide">
     <div class="chart-header">
       <div>
-        <div class="chart-title">Goals vs Expected Goals</div>
-        <div class="chart-sub">Per player · current filters · click to isolate on rink</div>
+        <div class="chart-title">xGoal vs actual goal rate · shot distance by type</div>
+        <div class="chart-sub">Solid = xGoal model · dashed = actual goals/shots · 5ft bins · min 5 shots</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+        <div class="xg-toggle">
+          <button id="btnShowXg" class="active" onclick="setXgMode('xg')">xGoal</button>
+          <button id="btnShowAct" onclick="setXgMode('actual')">Actual</button>
+          <button id="btnShowBoth" onclick="setXgMode('both')">Both</button>
+        </div>
+        <div class="type-pills" id="typePills"></div>
       </div>
     </div>
-    <canvas id="scatterCanvas" height="240"></canvas>
-    <div class="scatter-legend">
-      <div class="scatter-legend-item"><div class="scatter-dot" style="background:var(--green)"></div> Over-performing xG</div>
-      <div class="scatter-legend-item"><div class="scatter-dot" style="background:var(--orange)"></div> Under-performing xG</div>
-      <div class="scatter-legend-item"><div class="scatter-dot" style="background:#5a7a96"></div> On pace</div>
-    </div>
+    <canvas id="xgChart" height="280"></canvas>
+    <div class="source-line">[2018–2024] · src: MoneyPuck</div>
   </div>
 
-  <!-- Leaderboard -->
-  <div class="chart-panel">
-    <div class="chart-header">
-      <div>
-        <div class="chart-title">Player Leaderboard</div>
-        <div class="chart-sub">Click row to filter rink · click header to sort</div>
-      </div>
-    </div>
-    <div class="leader-scroll">
-      <table class="leader-table" id="leaderTable">
-        <thead>
-          <tr>
-            <th onclick="sortLeader('name')">#  Player</th>
-            <th onclick="sortLeader('pos')">Pos</th>
-            <th onclick="sortLeader('goals')">G</th>
-            <th onclick="sortLeader('xGoals')">xG</th>
-            <th onclick="sortLeader('diff')">G–xG</th>
-            <th onclick="sortLeader('shots')">Shots</th>
-            <th onclick="sortLeader('hdShots')">HD</th>
-          </tr>
-        </thead>
-        <tbody id="leaderBody"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<div class="section-divider">
-  <div class="divider-line"></div>
-  <h2>Goal Expectancy by Distance</h2>
-  <div class="divider-line"></div>
-</div>
-
-<div class="chart-panel-wide">
-  <div class="chart-header">
-    <div>
-      <div class="chart-title">xGoal vs Actual Goal Rate · Shot Distance by Type</div>
-      <div class="chart-sub">Solid line = xGoal model · Dashed = actual goals / shots · 5ft bins</div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
-      <div class="xg-toggle">
-        <button id="btnShowXg" class="active" onclick="setXgMode('xg')">xGoal</button>
-        <button id="btnShowAct" onclick="setXgMode('actual')">Actual</button>
-        <button id="btnShowBoth" onclick="setXgMode('both')">Both</button>
-      </div>
-      <div class="type-pills" id="typePills"></div>
-    </div>
-  </div>
-  <canvas id="xgChart" height="280"></canvas>
-</div>
+</main>
 
 <script>
 /* ═══════════════════════════════════════════════════
@@ -469,22 +992,22 @@
    Canvas: W=840px H=714px · Scale: 8.4px/ft
 ═══════════════════════════════════════════════════ */
 const W=840,H=714,PF=8.4;
+const NBSP=' ';
 function toSvgX(x){return x*PF;}
 function toSvgY(y){return H/2-y*PF;}
+function fmtInt(n){return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,NBSP);}
+function fmtFloat(n,d){return n.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g,NBSP);}
 
 /* ── State ── */
 let allShots=[],filteredShots=[],renderedDots=[];
 let allPlayers={};
 let filterEvent='ALL',filterSeason='ALL',filterTeam='ALL',filterSituation='ALL',filterPlayer=null;
-let heatMode='count',heatOpacity=0.70;
+let heatMode='count',heatOpacity=0.85;
 let xgDisplayMode='both';
 let leaderSortKey='goals',leaderSortDir=1;
 
-const TYPE_COLORS={
-  'Wrist':'#00c2ff','Slap':'#ff6b35','Snap':'#a8e063','Backhand':'#f7c59f',
-  'Tip-In':'#e040fb','Deflected':'#ffd740','Wrap-around':'#69f0ae','Other':'#90a4ae'
-};
-let activeTypes=new Set(Object.keys(TYPE_COLORS));
+let activeTypes=new Set();
+const TYPE_COLORS={};
 
 /* ═══════════ DATA LOADING ═══════════ */
 const SHOTS_URL='https://raw.githubusercontent.com/simonlasak/NHL-Shot-Analytics/refs/heads/main/shots_2018-2024_slim.csv';
@@ -518,11 +1041,10 @@ async function loadAllData(){
   const sub=document.getElementById('loadingSub');
 
   try {
-    // Load shots
-    sub.textContent='Fetching shots_2018-2024_slim.csv…';
+    sub.textContent='Fetching shots_2018-2024_slim.csv';
     const shotsRes=await fetch(SHOTS_URL);
     if(!shotsRes.ok)throw new Error('Failed to fetch shots CSV ('+shotsRes.status+')');
-    sub.textContent='Parsing shot data…';
+    sub.textContent='Parsing shot data';
     const shotsText=await shotsRes.text();
     const shotRows=parseCSV(shotsText);
     const shots=[];
@@ -547,11 +1069,10 @@ async function loadAllData(){
     allShots=shots;
     allPlayers=buildPlayerMapFromShots(allShots);
 
-    // Load skaters
-    sub.textContent='Fetching skaters_2018-2024_slim.csv…';
+    sub.textContent='Fetching skaters_2018-2024_slim.csv';
     const playersRes=await fetch(PLAYERS_URL);
     if(!playersRes.ok)throw new Error('Failed to fetch players CSV ('+playersRes.status+')');
-    sub.textContent='Parsing player data…';
+    sub.textContent='Parsing player data';
     const playersText=await playersRes.text();
     const playerRows=parseCSV(playersText);
     playerRows.forEach(row=>{
@@ -574,27 +1095,23 @@ async function loadAllData(){
       };
     });
 
-    sub.textContent='Building visuals…';
+    sub.textContent='Building visuals';
     populateDropdowns();
     buildTypePills();
     drawRuler();
     applyAllFilters();
-
-    // Hide overlay
     overlay.classList.add('hidden');
-
   } catch(err){
     sub.textContent='';
-    document.querySelector('.loading-text').textContent='Error loading data';
+    document.querySelector('.loading-text').textContent='§ ERROR LOADING DATA';
     const errDiv=document.createElement('div');
-    errDiv.style.cssText='font-size:0.78rem;color:#ff4d4d;max-width:360px;text-align:center;line-height:1.6;';
-    errDiv.textContent=err.message+'. Check that the GitHub repository is public and the CSV paths are correct.';
+    errDiv.style.cssText='font-size:12px;color:#FF4D17;max-width:420px;line-height:1.6;text-transform:uppercase;letter-spacing:0.04em;margin-top:8px;';
+    errDiv.textContent=err.message+'. Check that the GitHub repository is public and CSV paths are correct.';
     overlay.appendChild(errDiv);
     console.error(err);
   }
 }
 
-/* Build allPlayers lookup from shot data (derives stats on the fly) */
 function buildPlayerMapFromShots(shots){
   const map={};
   shots.forEach(s=>{
@@ -630,11 +1147,11 @@ function populateDropdowns(){
   const seasons=[...new Set(allShots.map(s=>s.season))].filter(Boolean).sort();
   const teams=[...new Set(allShots.map(s=>s.teamCode))].filter(Boolean).sort();
   const ss=document.getElementById('selSeason'),cs=ss.value;
-  ss.innerHTML='<option value="ALL">All Seasons</option>';
+  ss.innerHTML='<option value="ALL">All seasons</option>';
   seasons.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s+'-'+(parseInt(s)+1);ss.appendChild(o);});
   if(cs&&cs!=='ALL')ss.value=cs;
   const st=document.getElementById('selTeam'),ct=st.value;
-  st.innerHTML='<option value="ALL">All Teams</option>';
+  st.innerHTML='<option value="ALL">All teams</option>';
   teams.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;st.appendChild(o);});
   if(ct&&ct!=='ALL')st.value=ct;
 }
@@ -686,20 +1203,17 @@ function updateBadge(){
   if(filterPlayer!==null&&allPlayers[filterPlayer])parts.push(allPlayers[filterPlayer].name);
   const badge=document.getElementById('filterBadge');
   if(parts.length){
-    document.getElementById('filterText').textContent='Showing: '+parts.join(' · ');
-    badge.style.display='flex';
+    document.getElementById('filterText').textContent='[ '+parts.join(' · ')+' ]';
+    badge.style.display='inline-flex';
   } else badge.style.display='none';
 }
 
-/* ── Rink drawing ── */
-const BIN=16,BX=Math.ceil(W/BIN),BY=Math.ceil(H/BIN);
+/* ── Heatmap (single-hue orange) ── */
+const BIN=14,BX=Math.ceil(W/BIN),BY=Math.ceil(H/BIN);
 function heatColor(t){
   if(t<=0)return[0,0,0,0];
-  const a=Math.min(1,t*1.2)*255;let r,g,b;
-  if(t<0.33){r=255;g=230-t/0.33*100;b=0;}
-  else if(t<0.66){const s=(t-0.33)/0.33;r=255;g=130-s*100;b=0;}
-  else{const s=(t-0.66)/0.34;r=220;g=Math.max(0,30-s*30);b=Math.max(0,s*30);}
-  return[r,g,b,a];
+  const a=Math.min(1,Math.pow(t,0.85)*1.1)*255;
+  return[0xFF,0x4D,0x17,a];
 }
 function boxBlur(arr,w,h,r){
   const tmp=new Float32Array(arr.length),out=new Float32Array(arr.length);
@@ -733,6 +1247,8 @@ function drawHeatmap(){
   }
   ctx.putImageData(img,0,0);
 }
+
+/* ── Dots: square markers ── */
 function drawDots(){
   const ctx=document.getElementById('dotCanvas').getContext('2d');
   ctx.clearRect(0,0,W,H);
@@ -744,11 +1260,19 @@ function drawDots(){
   shots.forEach(s=>{
     const px=toSvgX(s.xCordAdjusted),py=toSvgY(s.yCordAdjusted);
     const highlighted=filterPlayer!==null&&s.shooterPlayerId===filterPlayer;
-    ctx.beginPath();ctx.arc(px,py,highlighted?3.5:2,0,Math.PI*2);
-    ctx.fillStyle=s.goal===1?'rgba(255,80,80,0.85)'
-      :(highlighted?'rgba(0,194,255,0.7)':'rgba(0,194,255,0.22)');
-    ctx.fill();
-    if(highlighted){ctx.strokeStyle='rgba(0,194,255,0.5)';ctx.lineWidth=1;ctx.stroke();}
+    const sz=highlighted?6:3;
+    if(s.goal===1){
+      ctx.fillStyle='#FF4D17';
+      ctx.fillRect(px-sz/2,py-sz/2,sz,sz);
+    } else {
+      ctx.fillStyle=highlighted?'rgba(0,0,0,0.85)':'rgba(0,0,0,0.28)';
+      ctx.fillRect(px-sz/2,py-sz/2,sz,sz);
+    }
+    if(highlighted){
+      ctx.strokeStyle='#FF4D17';
+      ctx.lineWidth=1;
+      ctx.strokeRect(px-sz/2-1,py-sz/2-1,sz+2,sz+2);
+    }
     renderedDots.push({px,py,shot:s});
   });
 }
@@ -758,12 +1282,12 @@ function updateStats(){
   const sog=filteredShots.filter(s=>s.event==='SHOT'||s.event==='GOAL').length;
   const xg=filteredShots.reduce((a,s)=>a+(s.xGoal||0),0);
   const players=new Set(filteredShots.map(s=>s.shooterPlayerId).filter(Boolean)).size;
-  document.getElementById('statTotal').textContent=total.toLocaleString();
-  document.getElementById('statGoals').textContent=goals.toLocaleString();
+  document.getElementById('statTotal').textContent='['+fmtInt(total)+']';
+  document.getElementById('statGoals').textContent=fmtInt(goals);
   document.getElementById('statGR').textContent=total>0?(goals/total*100).toFixed(1)+'%':'–';
-  document.getElementById('statXG').textContent=xg.toFixed(1);
-  document.getElementById('statSOG').textContent=sog.toLocaleString();
-  document.getElementById('statPlayers').textContent=players.toLocaleString();
+  document.getElementById('statXG').textContent=fmtFloat(xg,1);
+  document.getElementById('statSOG').textContent=fmtInt(sog);
+  document.getElementById('statPlayers').textContent=fmtInt(players);
 }
 
 /* ── Tooltip on rink hover ── */
@@ -780,9 +1304,9 @@ function handleRinkHover(e){
   const s=best.shot;
   const tt=document.getElementById('tooltip');
   document.getElementById('ttShotRows').style.display='';
-  document.getElementById('ttName').textContent=(s.shooterName||'Unknown Player')+(s.goal?'  ⚽':' ');
+  document.getElementById('ttName').textContent=(s.shooterName||'Unknown')+(s.goal?' · GOAL':'');
   document.getElementById('ttType').textContent=s.shotType||'–';
-  document.getElementById('ttDist').textContent=(s.shotDistance||0).toFixed(1)+'ft';
+  document.getElementById('ttDist').textContent=(s.shotDistance||0).toFixed(1)+' ft';
   document.getElementById('ttXg').textContent=((s.xGoal||0)*100).toFixed(1)+'%';
   document.getElementById('ttSit').textContent=[s.situation,s.shotRush?'Rush':null,s.shotRebound?'Rebound':null].filter(Boolean).join(' · ')||'–';
   const pstats=getPlayerStats(s.shooterPlayerId,filterSeason==='ALL'?s.season:filterSeason);
@@ -793,7 +1317,7 @@ function handleRinkHover(e){
     const diff=pstats.goals-pstats.xGoals;
     const el=document.getElementById('ttPDiff');
     el.textContent=(diff>=0?'+':'')+diff.toFixed(1);
-    el.style.color=diff>0.5?'#39d98a':diff<-0.5?'#ff8c42':'#e2edf7';
+    el.style.color=diff>0.5?'#FF4D17':diff<-0.5?'#B0B0B0':'#FFFFFF';
     document.getElementById('ttPShots').textContent=`${pstats.shots} / ${pstats.hdShots}`;
   } else {
     document.getElementById('ttPlayerDivider').style.display='none';
@@ -801,7 +1325,7 @@ function handleRinkHover(e){
   }
   tt.style.display='block';
   let tx=e.clientX+14,ty=e.clientY-10;
-  if(tx+210>window.innerWidth)tx=e.clientX-210;
+  if(tx+240>window.innerWidth)tx=e.clientX-240;
   if(ty+160>window.innerHeight)ty=e.clientY-160;
   tt.style.left=tx+'px';tt.style.top=ty+'px';
 }
@@ -821,40 +1345,42 @@ function buildLeaderboard(){
     if((s.xGoal||0)>=0.2){p.hdShots+=1;if(s.goal)p.hdGoals+=1;}
   });
   let rows=Object.values(playerAgg).map(r=>({...r,diff:r.goals-r.xGoals}));
-  rows.sort((a,b)=>leaderSortDir*((b[leaderSortKey]||0)-(a[leaderSortKey]||0)));
-  const maxXg=Math.max(...rows.map(r=>r.xGoals),1);
-  document.querySelectorAll('.leader-table th').forEach(th=>{
+  if(leaderSortKey==='name'||leaderSortKey==='pos'){
+    rows.sort((a,b)=>{const va=String(a[leaderSortKey]||''),vb=String(b[leaderSortKey]||'');return leaderSortDir*va.localeCompare(vb);});
+  } else {
+    rows.sort((a,b)=>leaderSortDir*((b[leaderSortKey]||0)-(a[leaderSortKey]||0)));
+  }
+  const headerMap={name:0,pos:1,goals:2,xGoals:3,diff:4,shots:5,hdShots:6};
+  document.querySelectorAll('.leader-table th').forEach((th,i)=>{
     th.classList.remove('sort-active');
-    if(th.textContent.trim().includes(leaderSortKey.replace('xGoals','xG').replace('goals','G').replace('shots','Shots').replace('hdShots','HD').replace('name','Player').replace('pos','Pos').replace('diff','G–xG')))
-      th.classList.add('sort-active');
+    if(headerMap[leaderSortKey]===i)th.classList.add('sort-active');
   });
   const tbody=document.getElementById('leaderBody');
   tbody.innerHTML='';
-  rows.slice(0,50).forEach((r,i)=>{
+  rows.slice(0,80).forEach((r,i)=>{
     const diff=r.goals-r.xGoals;
     const isSelected=filterPlayer===r.pid;
-    const barW=Math.max(1,Math.round((r.xGoals/maxXg)*40));
     const tr=document.createElement('tr');
     if(isSelected)tr.classList.add('selected');
     tr.innerHTML=`
-      <td><span class="td-name">${i+1}. ${r.name}</span></td>
+      <td><span class="td-rank">${i+1}.</span>${r.name}</td>
       <td><span class="td-pos">${r.pos}</span></td>
-      <td>${r.goals}</td>
-      <td>${r.xGoals.toFixed(1)}<span class="td-xg-bar" style="width:${barW}px"></span></td>
-      <td class="${diff>=0?'td-diff-pos':'td-diff-neg'}">${diff>=0?'+':''}${diff.toFixed(1)}</td>
-      <td>${r.shots}</td>
-      <td>${r.hdShots}</td>`;
+      <td class="right">${r.goals}</td>
+      <td class="right">${r.xGoals.toFixed(1)}</td>
+      <td class="right ${diff>=0?'td-diff-pos':'td-diff-neg'}">${diff>=0?'+':''}${diff.toFixed(1)}</td>
+      <td class="right">${r.shots}</td>
+      <td class="right">${r.hdShots}</td>`;
     tr.onclick=()=>selectPlayer(r.pid);
     tbody.appendChild(tr);
   });
   if(!rows.length){
     const tr=document.createElement('tr');
-    tr.innerHTML='<td colspan="7" style="text-align:center;color:var(--muted);padding:20px">No data</td>';
+    tr.innerHTML='<td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;text-transform:uppercase;letter-spacing:0.06em;font-size:11px">No data</td>';
     tbody.appendChild(tr);
   }
 }
 function sortLeader(key){
-  if(leaderSortKey===key){leaderSortDir*=-1;}else{leaderSortKey=key;leaderSortDir=1;}
+  if(leaderSortKey===key){leaderSortDir*=-1;}else{leaderSortKey=key;leaderSortDir=key==='name'||key==='pos'?1:1;}
   buildLeaderboard();
 }
 
@@ -862,11 +1388,11 @@ function sortLeader(key){
 function drawScatter(){
   const canvas=document.getElementById('scatterCanvas');
   const dpr=window.devicePixelRatio||1;
-  const CW=canvas.parentElement.clientWidth-36,CH=240;
+  const CW=canvas.parentElement.clientWidth-48,CH=240;
   canvas.width=CW*dpr;canvas.height=CH*dpr;
   canvas.style.width=CW+'px';canvas.style.height=CH+'px';
   const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,CW,CH);
-  const ML=44,MR=20,MT=14,MB=36,pw=CW-ML-MR,ph=CH-MT-MB;
+  const ML=48,MR=18,MT=14,MB=36,pw=CW-ML-MR,ph=CH-MT-MB;
   const playerAgg={};
   filteredShots.forEach(s=>{
     const pid=s.shooterPlayerId;if(!pid)return;
@@ -876,59 +1402,77 @@ function drawScatter(){
     playerAgg[pid].shots+=1;
   });
   const pts=Object.entries(playerAgg).map(([pid,d])=>({pid:+pid,...d})).filter(d=>d.shots>=5);
-  if(!pts.length)return;
+  if(!pts.length){
+    ctx.font='11px JetBrains Mono, monospace';ctx.fillStyle='#808080';ctx.textAlign='center';
+    ctx.fillText('NO DATA',CW/2,CH/2);
+    return;
+  }
   const maxVal=Math.max(...pts.map(d=>Math.max(d.goals,d.xGoals)))*1.15||1;
   const sx=v=>ML+(v/maxVal)*pw,sy=v=>MT+ph-(v/maxVal)*ph;
-  ctx.strokeStyle='#1e3348';ctx.lineWidth=1;
-  ctx.font='10px Barlow, sans-serif';ctx.fillStyle='#5a7a96';
+
+  // Gridlines + ticks
+  ctx.strokeStyle='#E0E0E0';ctx.lineWidth=1;
+  ctx.font='11px JetBrains Mono, monospace';ctx.fillStyle='#000000';
   const ticks=5;
   for(let i=0;i<=ticks;i++){
-    const v=(maxVal/ticks)*i;
-    const y_=sy(v);
+    const v=(maxVal/ticks)*i,y_=sy(v);
     ctx.beginPath();ctx.moveTo(ML,y_);ctx.lineTo(ML+pw,y_);ctx.stroke();
-    ctx.textAlign='right';ctx.fillText(v.toFixed(0),ML-4,y_+4);
-    ctx.textAlign='center';ctx.fillText(v.toFixed(0),sx(v),MT+ph+14);
+    ctx.textAlign='right';ctx.fillText(v.toFixed(0),ML-6,y_+4);
+    ctx.textAlign='center';ctx.fillText(v.toFixed(0),sx(v),MT+ph+16);
   }
-  ctx.strokeStyle='#2a4060';ctx.lineWidth=1.5;
+  // Axes
+  ctx.strokeStyle='#000000';ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(ML,MT);ctx.lineTo(ML,MT+ph);ctx.lineTo(ML+pw,MT+ph);ctx.stroke();
-  ctx.save();ctx.setLineDash([4,4]);ctx.strokeStyle='rgba(90,122,150,0.4)';ctx.lineWidth=1.2;
+  // y=x diagonal
+  ctx.save();ctx.setLineDash([3,3]);ctx.strokeStyle='#808080';ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(sx(0),sy(0));ctx.lineTo(sx(maxVal),sy(maxVal));ctx.stroke();
   ctx.restore();
-  ctx.save();ctx.translate(11,MT+ph/2);ctx.rotate(-Math.PI/2);
-  ctx.fillStyle='#8aaccc';ctx.textAlign='center';ctx.font='10px Barlow Condensed, sans-serif';
-  ctx.fillText('Actual Goals',0,0);ctx.restore();
-  ctx.fillStyle='#8aaccc';ctx.textAlign='center';ctx.font='10px Barlow Condensed, sans-serif';
-  ctx.fillText('Expected Goals (xG)',ML+pw/2,CH-4);
-  ctx.font='9px Barlow Condensed, sans-serif';
-  ctx.fillStyle='rgba(57,217,138,0.35)';ctx.fillText('↑ OVER-PERFORMING',sx(maxVal*0.6),sy(maxVal*0.6)-10);
-  ctx.fillStyle='rgba(255,140,66,0.35)';ctx.fillText('↓ UNDER-PERFORMING',sx(maxVal*0.4)+20,sy(maxVal*0.4)+16);
+
+  // Axis labels
+  ctx.save();ctx.translate(13,MT+ph/2);ctx.rotate(-Math.PI/2);
+  ctx.fillStyle='#000000';ctx.textAlign='center';
+  ctx.font='11px JetBrains Mono, monospace';
+  ctx.fillText('GOALS',0,0);ctx.restore();
+  ctx.fillStyle='#000000';ctx.textAlign='center';
+  ctx.fillText('XG',ML+pw/2,CH-4);
+
+  // Quadrant labels
+  ctx.font='10px JetBrains Mono, monospace';
+  ctx.fillStyle='#808080';ctx.textAlign='left';
+  ctx.fillText('OVER',sx(maxVal*0.05)+4,sy(maxVal*0.92));
+  ctx.fillText('UNDER',sx(maxVal*0.78),sy(maxVal*0.08));
+
+  // Points: square markers
   const scatterDots=[];
   pts.forEach(p=>{
     const x_=sx(p.xGoals),y_=sy(p.goals);
     const diff=p.goals-p.xGoals;
     const isSelected=filterPlayer===p.pid;
-    let col;
-    if(isSelected)col='#00c2ff';
-    else if(diff>1)col='rgba(57,217,138,0.85)';
-    else if(diff<-1)col='rgba(255,140,66,0.85)';
-    else col='rgba(90,122,150,0.7)';
-    ctx.beginPath();ctx.arc(x_,y_,isSelected?5:3.5,0,Math.PI*2);
-    ctx.fillStyle=col;ctx.fill();
-    if(isSelected){ctx.strokeStyle='#00c2ff';ctx.lineWidth=1.5;ctx.stroke();}
-    scatterDots.push({x:x_,y:y_,pid:p.pid,name:p.name,goals:p.goals,xGoals:p.xGoals});
+    let col,sz;
+    if(isSelected){col='#FF4D17';sz=8;}
+    else if(diff>0.5){col='#000000';sz=5;}
+    else if(diff<-0.5){col='#808080';sz=5;}
+    else {col='#808080';sz=4;}
+    ctx.fillStyle=col;
+    ctx.fillRect(x_-sz/2,y_-sz/2,sz,sz);
+    if(isSelected){
+      ctx.strokeStyle='#FF4D17';ctx.lineWidth=1;
+      ctx.strokeRect(x_-sz/2-2,y_-sz/2-2,sz+4,sz+4);
+    }
+    scatterDots.push({x:x_,y:y_,pid:p.pid,name:p.name,goals:p.goals,xGoals:p.xGoals,shots:p.shots});
   });
+  // Selected label
   if(filterPlayer){
     const sel=scatterDots.find(d=>d.pid===filterPlayer);
     if(sel){
-      ctx.font='bold 10px Barlow Condensed, sans-serif';
-      ctx.fillStyle='#00c2ff';ctx.textAlign='left';
-      let lx=sel.x+7,ly=sel.y-4;
-      if(lx+60>CW)lx=sel.x-65;
-      ctx.fillText(sel.name,lx,ly);
+      ctx.font='500 11px JetBrains Mono, monospace';
+      ctx.fillStyle='#FF4D17';ctx.textAlign='left';
+      let lx=sel.x+10,ly=sel.y-6;
+      if(lx+80>CW)lx=sel.x-85;
+      ctx.fillText(sel.name.toUpperCase(),lx,ly);
     }
   }
   canvas._dots=scatterDots;
-  canvas._ctx={sx,sy,ML,MR,MT,MB,pw,ph,CW,CH};
 }
 
 /* Scatter hover */
@@ -952,11 +1496,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     document.getElementById('ttPGxg').textContent=`${best.goals} / ${best.xGoals.toFixed(1)}`;
     const el=document.getElementById('ttPDiff');
     el.textContent=(diff>=0?'+':'')+diff.toFixed(1);
-    el.style.color=diff>0.5?'#39d98a':diff<-0.5?'#ff8c42':'#e2edf7';
+    el.style.color=diff>0.5?'#FF4D17':diff<-0.5?'#B0B0B0':'#FFFFFF';
     document.getElementById('ttPShots').textContent=best.shots;
     tt.style.display='block';
     let tx=e.clientX+14,ty=e.clientY-10;
-    if(tx+210>window.innerWidth)tx=e.clientX-210;
+    if(tx+240>window.innerWidth)tx=e.clientX-240;
     tt.style.left=tx+'px';tt.style.top=ty+'px';
   });
   sc.addEventListener('click',e=>{
@@ -977,13 +1521,14 @@ const DBINS=18,DBS=5,MINB=5;
 function buildTypePills(){
   const types=[...new Set(allShots.map(s=>s.shotType||'Other'))].sort();
   activeTypes=new Set(types);
-  const extra=['#ff5252','#64ffda','#ff6d00','#d500f9','#00e676'];let ei=0;
-  types.forEach(t=>{if(!TYPE_COLORS[t]){TYPE_COLORS[t]=extra[ei%extra.length];ei++;}});
+  // assign black/gray/orange spotlight by index — keep palette to 2 col + accent
+  types.forEach((t,i)=>{TYPE_COLORS[t]='#000000';});
   const container=document.getElementById('typePills');container.innerHTML='';
-  types.forEach(type=>{
+  types.forEach((type,i)=>{
     const pill=document.createElement('span');
-    pill.className='pill active';pill.textContent=type;
-    pill.style.borderColor=TYPE_COLORS[type]||'#888';pill.style.color=TYPE_COLORS[type]||'#888';
+    pill.className='pill active';
+    pill.textContent=type;
+    pill.dataset.type=type;
     pill.onclick=()=>{
       if(activeTypes.has(type)){activeTypes.delete(type);pill.classList.remove('active');}
       else{activeTypes.add(type);pill.classList.add('active');}
@@ -995,11 +1540,11 @@ function buildTypePills(){
 function drawXGChart(){
   const canvas=document.getElementById('xgChart');
   const dpr=window.devicePixelRatio||1;
-  const CW=canvas.parentElement.clientWidth-48,CH=280;
+  const CW=canvas.parentElement.clientWidth-48,CH=320;
   canvas.width=CW*dpr;canvas.height=CH*dpr;
   canvas.style.width=CW+'px';canvas.style.height=CH+'px';
   const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,CW,CH);
-  const ML=52,MR=24,MT=16,MB=44,pw=CW-ML-MR,ph=CH-MT-MB;
+  const ML=56,MR=120,MT=18,MB=44,pw=CW-ML-MR,ph=CH-MT-MB;
   const types=[...new Set(filteredShots.map(s=>s.shotType||'Other'))].sort();
   const xgBins={},actBins={};
   types.forEach(t=>{
@@ -1019,59 +1564,93 @@ function drawXGChart(){
   });
   maxV=Math.ceil(maxV*20)/20;
   const px2=d=>ML+(d/90)*pw,py2=v=>MT+ph-(v/maxV)*ph;
-  ctx.strokeStyle='#1e3348';ctx.lineWidth=1;
-  ctx.font='11px Barlow, sans-serif';ctx.fillStyle='#5a7a96';ctx.textAlign='right';
+
+  // Gridlines + ticks
+  ctx.strokeStyle='#E0E0E0';ctx.lineWidth=1;
+  ctx.font='11px JetBrains Mono, monospace';ctx.fillStyle='#000000';ctx.textAlign='right';
   for(let i=0;i<=5;i++){
     const v=(maxV/5)*i,y_=py2(v);
     ctx.beginPath();ctx.moveTo(ML,y_);ctx.lineTo(ML+pw,y_);ctx.stroke();
-    ctx.fillText((v*100).toFixed(0)+'%',ML-6,y_+4);
+    ctx.fillText((v*100).toFixed(0)+'%',ML-8,y_+4);
   }
-  ctx.textAlign='center';ctx.fillStyle='#5a7a96';
+  ctx.textAlign='center';ctx.fillStyle='#000000';
   for(let d=0;d<=90;d+=10){
     const x_=px2(d);
-    ctx.beginPath();ctx.moveTo(x_,MT+ph);ctx.lineTo(x_,MT+ph+5);ctx.stroke();
-    ctx.fillText(d+"'",x_,MT+ph+17);
+    ctx.strokeStyle='#000000';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(x_,MT+ph);ctx.lineTo(x_,MT+ph+4);ctx.stroke();
+    ctx.fillText(d+"FT",x_,MT+ph+18);
   }
+  // Axis labels
   ctx.save();ctx.translate(13,MT+ph/2);ctx.rotate(-Math.PI/2);
-  ctx.fillStyle='#8aaccc';ctx.textAlign='center';ctx.font='11px Barlow Condensed, sans-serif';
-  ctx.fillText('Goal Rate',0,0);ctx.restore();
-  ctx.fillStyle='#8aaccc';ctx.textAlign='center';ctx.font='11px Barlow Condensed, sans-serif';
-  ctx.fillText('Shot Distance (feet from net)',ML+pw/2,CH-6);
-  ctx.strokeStyle='#2a4060';ctx.lineWidth=1.5;
+  ctx.fillStyle='#000000';ctx.textAlign='center';
+  ctx.font='11px JetBrains Mono, monospace';
+  ctx.fillText('GOAL RATE',0,0);ctx.restore();
+  ctx.fillStyle='#000000';ctx.textAlign='center';
+  ctx.fillText('SHOT DISTANCE',ML+pw/2,CH-6);
+  // Frame
+  ctx.strokeStyle='#000000';ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(ML,MT);ctx.lineTo(ML,MT+ph);ctx.lineTo(ML+pw,MT+ph);ctx.stroke();
-  if(xgDisplayMode==='both'){
-    ctx.font='9px Barlow Condensed,sans-serif';ctx.fillStyle='rgba(142,172,204,0.6)';ctx.textAlign='left';
-    ctx.fillText('── xGoal model   ╌╌ actual goal rate',ML+4,MT+11);
-  }
+
+  // Lines: all shot types in #000 (xG solid) / #808080 (actual dashed if both, else solid #000)
   const activeArr=types.filter(t=>activeTypes.has(t));
   const labelY=[];
-  activeArr.forEach(type=>{
-    const color=TYPE_COLORS[type]||'#888';
+  activeArr.forEach((type,i)=>{
+    // alternate primary/secondary line weight to differentiate when many series
+    const isEven=i%2===0;
+    const lineColor='#000000';
+    const dashColor='#808080';
     if(xgDisplayMode==='xg'||xgDisplayMode==='both'){
-      const pts=xgBins[type].map((b,i)=>({dist:i*DBS+DBS/2,v:b.n>=MINB?b.sum/b.n:null})).filter(p=>p.v!==null);
+      const pts=xgBins[type].map((b,i2)=>({dist:i2*DBS+DBS/2,v:b.n>=MINB?b.sum/b.n:null})).filter(p=>p.v!==null);
       if(pts.length>=2){
-        ctx.save();ctx.shadowColor=color;ctx.shadowBlur=4;
-        ctx.strokeStyle=color;ctx.lineWidth=2.2;ctx.lineJoin='round';ctx.lineCap='round';
-        ctx.beginPath();pts.forEach((p,i)=>{i===0?ctx.moveTo(px2(p.dist),py2(p.v)):ctx.lineTo(px2(p.dist),py2(p.v));});
-        ctx.stroke();ctx.restore();
-        pts.forEach(p=>{ctx.beginPath();ctx.arc(px2(p.dist),py2(p.v),2.5,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();});
+        ctx.save();
+        ctx.strokeStyle=lineColor;
+        ctx.lineWidth=isEven?1.6:1.1;
+        ctx.lineJoin='round';ctx.lineCap='round';
+        ctx.beginPath();pts.forEach((p,i2)=>{i2===0?ctx.moveTo(px2(p.dist),py2(p.v)):ctx.lineTo(px2(p.dist),py2(p.v));});
+        ctx.stroke();
+        ctx.restore();
+        // square markers
+        pts.forEach(p=>{ctx.fillStyle=lineColor;ctx.fillRect(px2(p.dist)-2,py2(p.v)-2,4,4);});
+        // label at end of line
         const last=pts[pts.length-1];let y_=py2(last.v);
-        labelY.forEach(yy=>{if(Math.abs(y_-yy)<12)y_=y_>yy?y_+12:y_-12;});
+        labelY.forEach(yy=>{if(Math.abs(y_-yy)<13)y_=y_>yy?y_+13:y_-13;});
         labelY.push(y_);
-        ctx.font='bold 9px Barlow Condensed,sans-serif';ctx.fillStyle=color;ctx.textAlign='left';
-        ctx.fillText(type,px2(last.dist)+5,y_+4);
+        ctx.font='500 10px JetBrains Mono, monospace';
+        ctx.fillStyle='#000000';
+        ctx.textAlign='left';
+        ctx.fillText(type.toUpperCase(),px2(last.dist)+8,y_+3);
       }
     }
     if(xgDisplayMode==='actual'||xgDisplayMode==='both'){
-      const apts=actBins[type].map((b,i)=>({dist:i*DBS+DBS/2,v:b.n>=MINB?b.goals/b.n:null})).filter(p=>p.v!==null);
+      const apts=actBins[type].map((b,i2)=>({dist:i2*DBS+DBS/2,v:b.n>=MINB?b.goals/b.n:null})).filter(p=>p.v!==null);
       if(apts.length>=2){
-        ctx.save();ctx.setLineDash([5,3]);
-        ctx.strokeStyle=color;ctx.lineWidth=1.6;ctx.globalAlpha=0.65;ctx.lineJoin='round';
-        ctx.beginPath();apts.forEach((p,i)=>{i===0?ctx.moveTo(px2(p.dist),py2(p.v)):ctx.lineTo(px2(p.dist),py2(p.v));});
-        ctx.stroke();ctx.restore();
+        ctx.save();
+        ctx.setLineDash([4,3]);
+        ctx.strokeStyle=xgDisplayMode==='actual'?'#000000':'#808080';
+        ctx.lineWidth=isEven?1.4:1;
+        ctx.lineJoin='round';
+        ctx.beginPath();apts.forEach((p,i2)=>{i2===0?ctx.moveTo(px2(p.dist),py2(p.v)):ctx.lineTo(px2(p.dist),py2(p.v));});
+        ctx.stroke();
+        ctx.restore();
+        if(xgDisplayMode==='actual'){
+          const last=apts[apts.length-1];let y_=py2(last.v);
+          labelY.forEach(yy=>{if(Math.abs(y_-yy)<13)y_=y_>yy?y_+13:y_-13;});
+          labelY.push(y_);
+          ctx.font='500 10px JetBrains Mono, monospace';
+          ctx.fillStyle='#000000';
+          ctx.textAlign='left';
+          ctx.fillText(type.toUpperCase(),px2(last.dist)+8,y_+3);
+        }
       }
     }
   });
+
+  // Inline legend top-right
+  if(xgDisplayMode==='both'){
+    ctx.font='10px JetBrains Mono, monospace';
+    ctx.fillStyle='#808080';ctx.textAlign='left';
+    ctx.fillText('── XGOAL    ╌╌ ACTUAL',ML+8,MT+12);
+  }
 }
 
 /* ── Ruler ── */
@@ -1082,20 +1661,23 @@ function drawRuler(){
   c.style.width='840px';c.style.height='38px';
   const ctx=c.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,840,38);
   const zones=[
-    {x0:0,x1:210,label:'Neutral Zone  25ft',bar:'rgba(100,130,200,0.45)',txt:'#7799cc'},
-    {x0:210,x1:748,label:'Offensive Zone  64ft',bar:'rgba(70,160,100,0.45)',txt:'#55cc88'},
-    {x0:748,x1:840,label:'Behind Net  11ft',bar:'rgba(180,120,50,0.50)',txt:'#cc8833'},
+    {x0:0,x1:210,label:'NEUTRAL · 25FT'},
+    {x0:210,x1:748,label:'OFFENSIVE ZONE · 64FT'},
+    {x0:748,x1:840,label:'BEHIND NET · 11FT'},
   ];
-  ctx.font='bold 10px Barlow Condensed, sans-serif';ctx.textAlign='center';
+  ctx.font='500 10px JetBrains Mono, monospace';ctx.textAlign='center';
   zones.forEach(z=>{
-    ctx.fillStyle=z.bar;ctx.fillRect(z.x0+1,22,z.x1-z.x0-2,6);
-    ctx.strokeStyle=z.txt;ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(z.x0+1,18);ctx.lineTo(z.x0+1,31);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(z.x1-1,18);ctx.lineTo(z.x1-1,31);ctx.stroke();
-    ctx.fillStyle=z.txt;ctx.fillText(z.label,(z.x0+z.x1)/2,14);
+    ctx.fillStyle='#000000';
+    ctx.fillRect(z.x0+1,24,z.x1-z.x0-2,3);
+    ctx.strokeStyle='#000000';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(z.x0+1,18);ctx.lineTo(z.x0+1,32);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(z.x1-1,18);ctx.lineTo(z.x1-1,32);ctx.stroke();
+    ctx.fillStyle='#000000';
+    ctx.fillText(z.label,(z.x0+z.x1)/2,14);
   });
-  [[0,'#cc4444'],[210,'#4466cc'],[748,'#cc4444'],[840,'#778899']].forEach(([x,col])=>{
-    ctx.strokeStyle=col;ctx.lineWidth=1.5;
+  // Tick marks at significant lines
+  [[0],[210],[748],[840]].forEach(([x])=>{
+    ctx.strokeStyle='#000000';ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,38);ctx.stroke();
   });
 }
