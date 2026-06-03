@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NHL Shot Analytics</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;600;700&family=Barlow:wght@300;400;500&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --rink-bg:#0b1520; --panel:#111d2b; --panel2:#162233;
+    --accent:#00c2ff; --text:#e2edf7; --muted:#5a7a96; --border:#1e3348;
+    --green:#39d98a; --orange:#ff8c42; --red:#ff4d4d;
+  }
+  body {
+    background:var(--rink-bg); color:var(--text); font-family:'Barlow',sans-serif;
+    min-height:100vh; padding:24px 20px 48px;
+    display:flex; flex-direction:column; align-items:center; gap:20px;
+  }
+  header { display:flex; flex-direction:column; align-items:center; gap:4px; width:100%; }
+  h1 { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:2rem;
+       letter-spacing:0.15em; text-transform:uppercase; color:var(--accent); }
+  h1 span { color:var(--text); }
+  .subtitle { font-size:0.82rem; color:var(--muted); letter-spacing:0.05em; }
+
+  .controls {
+    display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; justify-content:center;
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:14px 20px; width:100%; max-width:840px;
+  }
+  .ctrl-group { display:flex; flex-direction:column; gap:4px; }
+  .ctrl-label { font-size:0.68rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); }
+  .btn-group { display:flex; gap:4px; }
+  button {
+    font-family:'Barlow Condensed',sans-serif; font-size:0.85rem; font-weight:600;
+    letter-spacing:0.05em; padding:5px 14px; border-radius:5px;
+    border:1px solid #2a4060; background:var(--panel2); color:var(--muted);
+    cursor:pointer; transition:all 0.15s;
+  }
+  button.active, button:hover { background:var(--accent); color:#000; border-color:var(--accent); }
+  select {
+    font-family:'Barlow Condensed',sans-serif; font-size:0.85rem; font-weight:600;
+    letter-spacing:0.04em; padding:5px 28px 5px 10px; border-radius:5px;
+    border:1px solid #2a4060; background:var(--panel2); color:var(--text);
+    cursor:pointer; -webkit-appearance:none; appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a7a96'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 8px center;
+    min-width:120px; transition:border-color 0.15s;
+  }
+  select:hover, select:focus { border-color:var(--accent); outline:none; }
+  select option { background:#111d2b; color:var(--text); }
+  .filter-badge {
+    font-family:'Barlow Condensed',sans-serif; font-size:0.75rem; letter-spacing:0.06em;
+    background:rgba(0,194,255,0.1); border:1px solid rgba(0,194,255,0.3);
+    color:var(--accent); padding:3px 10px; border-radius:4px; display:flex; align-items:center; gap:8px;
+  }
+  .badge-clear {
+    cursor:pointer; color:var(--muted); font-size:0.9em; padding:0 2px;
+    transition:color 0.15s; line-height:1;
+  }
+  .badge-clear:hover { color:var(--accent); }
+
+  /* Loading overlay */
+  #loadingOverlay {
+    position:fixed; inset:0; background:rgba(11,21,32,0.92);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:16px; z-index:9999;
+  }
+  #loadingOverlay.hidden { display:none; }
+  .loading-spinner {
+    width:42px; height:42px; border:3px solid #1e3348;
+    border-top-color:var(--accent); border-radius:50%;
+    animation:spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .loading-text { font-family:'Barlow Condensed',sans-serif; font-size:1.1rem;
+    letter-spacing:0.12em; color:var(--accent); }
+  .loading-sub { font-size:0.78rem; color:var(--muted); letter-spacing:0.05em; }
+
+  /* ── Rink block (UNCHANGED) ── */
+  .rink-block { width:840px; max-width:100%; }
+  #rulerCanvas {
+    display:block; width:840px; max-width:100%; height:38px;
+    background:var(--panel); border-radius:10px 10px 0 0;
+    border:1px solid var(--border); border-bottom:none;
+  }
+  .canvas-stack {
+    position:relative; width:840px; height:714px;
+    border-radius:0 0 12px 12px; overflow:hidden;
+    box-shadow:0 0 60px rgba(0,194,255,0.08), 0 0 0 1px var(--border);
+    cursor:crosshair;
+  }
+  #rinkSvg { position:absolute; top:0; left:0; width:100%; height:100%; }
+  #heatCanvas, #dotCanvas { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+  #hoverOverlay { position:absolute; top:0; left:0; width:100%; height:100%; }
+
+  /* ── Tooltip ── */
+  #tooltip {
+    position:fixed; pointer-events:none; z-index:999;
+    background:#0d1a28; border:1px solid var(--border);
+    border-radius:8px; padding:10px 14px; min-width:180px;
+    font-size:0.78rem; line-height:1.7; display:none;
+    box-shadow:0 4px 24px rgba(0,0,0,0.5);
+  }
+  #tooltip .tt-name { font-family:'Barlow Condensed',sans-serif; font-size:1rem; font-weight:700;
+    color:var(--accent); letter-spacing:0.05em; margin-bottom:4px; }
+  #tooltip .tt-row { display:flex; justify-content:space-between; gap:16px; }
+  #tooltip .tt-key { color:var(--muted); }
+  #tooltip .tt-val { color:var(--text); font-weight:500; }
+  #tooltip .tt-divider { border:none; border-top:1px solid var(--border); margin:5px 0; }
+
+  .legend-row { display:flex; align-items:center; gap:16px; justify-content:center; flex-wrap:wrap; }
+  .legend-scale { display:flex; align-items:center; gap:8px; }
+  .legend-gradient {
+    width:160px; height:10px; border-radius:5px;
+    background:linear-gradient(to right,transparent,rgba(255,230,0,0.5),rgba(255,120,0,0.7),rgba(220,30,30,0.85));
+    border:1px solid #2a4060;
+  }
+  .legend-label { font-size:0.72rem; color:var(--muted); letter-spacing:0.05em; }
+  .dot-legend { display:flex; gap:12px; align-items:center; }
+  .dot-item { display:flex; align-items:center; gap:5px; font-size:0.72rem; color:var(--muted); }
+  .dot-circle { width:8px; height:8px; border-radius:50%; }
+
+  .stats-bar {
+    display:flex; gap:24px; background:var(--panel); border:1px solid var(--border);
+    border-radius:8px; padding:10px 24px; width:100%; max-width:840px;
+    justify-content:center; flex-wrap:wrap;
+  }
+  .stat { display:flex; flex-direction:column; align-items:center; gap:2px; }
+  .stat-value { font-family:'Barlow Condensed',sans-serif; font-size:1.5rem; font-weight:700; color:var(--accent); }
+  .stat-label { font-size:0.68rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); }
+
+  .section-divider {
+    width:100%; max-width:840px; display:flex; align-items:center; gap:12px; margin:8px 0 0;
+  }
+  .section-divider h2 {
+    font-family:'Barlow Condensed',sans-serif; font-size:1.1rem; font-weight:600;
+    letter-spacing:0.12em; text-transform:uppercase; color:var(--accent); white-space:nowrap;
+  }
+  .divider-line { flex:1; height:1px; background:var(--border); }
+
+  /* ── Bottom grid: scatter + leaderboard ── */
+  .bottom-grid {
+    display:grid; grid-template-columns:1fr 1fr; gap:16px;
+    width:100%; max-width:840px;
+  }
+  .chart-panel {
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:12px; padding:16px 18px 14px;
+  }
+  .chart-header { display:flex; justify-content:space-between; align-items:flex-start;
+    flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  .chart-title { font-family:'Barlow Condensed',sans-serif; font-size:0.95rem; font-weight:600;
+    letter-spacing:0.08em; text-transform:uppercase; color:var(--text); }
+  .chart-sub { font-size:0.68rem; color:var(--muted); margin-top:2px; }
+  .type-pills { display:flex; flex-wrap:wrap; gap:5px; }
+  .pill {
+    font-family:'Barlow Condensed',sans-serif; font-size:0.75rem; font-weight:600;
+    letter-spacing:0.05em; padding:3px 10px; border-radius:20px;
+    border:1px solid; cursor:pointer; transition:all 0.15s; opacity:0.35;
+  }
+  .pill.active { opacity:1; }
+  .chart-panel-wide {
+    width:100%; max-width:840px; background:var(--panel); border:1px solid var(--border);
+    border-radius:12px; padding:20px 24px 16px;
+  }
+  #scatterCanvas { display:block; width:100%; }
+  #xgChart { display:block; width:100%; }
+
+  /* ── Leaderboard ── */
+  .leader-scroll { overflow-y:auto; max-height:280px; }
+  .leader-scroll::-webkit-scrollbar { width:4px; }
+  .leader-scroll::-webkit-scrollbar-track { background:transparent; }
+  .leader-scroll::-webkit-scrollbar-thumb { background:#2a4060; border-radius:2px; }
+  .leader-table { width:100%; border-collapse:collapse; font-size:0.75rem; }
+  .leader-table th {
+    font-family:'Barlow Condensed',sans-serif; font-size:0.68rem; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--muted); padding:4px 6px;
+    border-bottom:1px solid var(--border); text-align:right; cursor:pointer;
+    white-space:nowrap; position:sticky; top:0; background:var(--panel); z-index:1;
+  }
+  .leader-table th:first-child { text-align:left; }
+  .leader-table th:hover { color:var(--accent); }
+  .leader-table th.sort-active { color:var(--accent); }
+  .leader-table td {
+    padding:5px 6px; border-bottom:1px solid rgba(30,51,72,0.5);
+    text-align:right; color:var(--text);
+  }
+  .leader-table td:first-child { text-align:left; }
+  .leader-table tr { cursor:pointer; transition:background 0.12s; }
+  .leader-table tr:hover td { background:rgba(0,194,255,0.07); }
+  .leader-table tr.selected td { background:rgba(0,194,255,0.13); }
+  .td-name { font-weight:500; white-space:nowrap; }
+  .td-pos {
+    font-family:'Barlow Condensed',sans-serif; font-size:0.68rem;
+    color:var(--muted); letter-spacing:0.04em;
+  }
+  .td-diff-pos { color:var(--green); }
+  .td-diff-neg { color:var(--orange); }
+  .td-xg-bar {
+    display:inline-block; height:4px; border-radius:2px;
+    background:var(--accent); opacity:0.5; vertical-align:middle; margin-left:4px;
+  }
+
+  .scatter-legend {
+    display:flex; gap:12px; margin-top:8px; justify-content:center; flex-wrap:wrap;
+  }
+  .scatter-legend-item { display:flex; align-items:center; gap:5px; font-size:0.68rem; color:var(--muted); }
+  .scatter-dot { width:8px; height:8px; border-radius:50%; }
+
+  .xg-toggle { display:flex; gap:4px; }
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Loading Shot Data</div>
+  <div class="loading-sub" id="loadingSub">Fetching shots_2018-2024_slim.csv…</div>
+</div>
+
+<header>
+  <h1>NHL <span>Shot</span> Analytics</h1>
+  <p class="subtitle">MoneyPuck · 2018–2024 · Offensive zone view · x=0 center ice → x=89 goal line → x=100 end boards</p>
+</header>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <div class="ctrl-label">Season</div>
+    <select id="selSeason" onchange="applyAllFilters()">
+      <option value="ALL">All Seasons</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <div class="ctrl-label">Team (Shooting)</div>
+    <select id="selTeam" onchange="applyAllFilters()">
+      <option value="ALL">All Teams</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <div class="ctrl-label">Situation</div>
+    <select id="selSituation" onchange="applyAllFilters()">
+      <option value="ALL">All</option>
+      <option value="5v5">5v5</option>
+      <option value="PP">Power Play</option>
+      <option value="PK">Penalty Kill</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <div class="ctrl-label">Shot Events</div>
+    <div class="btn-group">
+      <button id="btnAll"  class="active" onclick="setFilter('ALL')">All</button>
+      <button id="btnShot" onclick="setFilter('SHOT')">On Goal</button>
+      <button id="btnGoal" onclick="setFilter('GOAL')">Goals</button>
+      <button id="btnMiss" onclick="setFilter('MISS')">Missed</button>
+    </div>
+  </div>
+  <div class="ctrl-group">
+    <div class="ctrl-label">Heat Mode</div>
+    <div class="btn-group">
+      <button id="btnCount" class="active" onclick="setMode('count')">Count</button>
+      <button id="btnXG"    onclick="setMode('xg')">xGoal</button>
+      <button id="btnGR"    onclick="setMode('gr')">Goal Rate</button>
+    </div>
+  </div>
+</div>
+
+<div id="filterBadge" class="filter-badge" style="display:none">
+  <span id="filterText"></span>
+  <span class="badge-clear" onclick="clearPlayerFilter()" title="Clear player filter">✕</span>
+</div>
+
+<!-- Ruler + rink block — DIMENSIONS UNCHANGED -->
+<div class="rink-block">
+  <canvas id="rulerCanvas" width="840" height="38"></canvas>
+  <div class="canvas-stack" id="canvasStack">
+    <svg id="rinkSvg" viewBox="0 0 840 714" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="grain">
+          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+          <feColorMatrix type="saturate" values="0"/>
+          <feBlend in="SourceGraphic" mode="multiply" result="blend"/>
+          <feComposite in="blend" in2="SourceGraphic" operator="in"/>
+        </filter>
+        <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(180,130,80,0.18)" stroke-width="3"/>
+        </pattern>
+      </defs>
+      <!-- Ice -->
+      <rect x="0" y="0" width="840" height="714" fill="#cce8f5"/>
+      <rect x="0" y="0" width="840" height="714" fill="url(#grain)" opacity="0.04"/>
+      <!-- Zone tints -->
+      <rect x="0" y="0" width="210" height="714" fill="rgba(80,110,200,0.04)"/>
+      <rect x="748" y="0" width="92" height="714" fill="url(#hatch)"/>
+      <rect x="748" y="0" width="92" height="714" fill="rgba(160,110,50,0.06)"/>
+      <!-- Center line -->
+      <line x1="2" y1="0" x2="2" y2="714" stroke="#cc2222" stroke-width="4"/>
+      <!-- Neutral zone faceoff dots -->
+      <circle cx="42" cy="172" r="5" fill="#cc2222"/>
+      <circle cx="42" cy="542" r="5" fill="#cc2222"/>
+      <!-- Blue line -->
+      <rect x="208" y="0" width="4" height="714" fill="#1a44cc"/>
+      <!-- OZ faceoff dots + circles -->
+      <circle cx="580" cy="172" r="6" fill="#cc2222"/>
+      <circle cx="580" cy="542" r="6" fill="#cc2222"/>
+      <circle cx="580" cy="172" r="126" fill="none" stroke="#cc2222" stroke-width="2" opacity="0.45"/>
+      <circle cx="580" cy="542" r="126" fill="none" stroke="#cc2222" stroke-width="2" opacity="0.45"/>
+      <!-- Hash marks -->
+      <line x1="553" y1="135" x2="580" y2="135" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
+      <line x1="553" y1="209" x2="580" y2="209" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
+      <line x1="607" y1="135" x2="580" y2="135" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
+      <line x1="607" y1="209" x2="580" y2="209" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
+      <line x1="553" y1="505" x2="580" y2="505" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
+      <line x1="553" y1="579" x2="580" y2="579" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
+      <line x1="607" y1="505" x2="580" y2="505" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
+      <line x1="607" y1="579" x2="580" y2="579" stroke="#cc2222" stroke-width="2" opacity="0.65"/>
+      <!-- Goal line -->
+      <line x1="748" y1="0" x2="748" y2="714" stroke="#cc2222" stroke-width="3"/>
+      <!-- Crease -->
+      <path d="M 748 332 Q 697 332 697 357 Q 697 382 748 382" fill="rgba(0,60,200,0.12)" stroke="#cc2222" stroke-width="1.5"/>
+      <!-- Net -->
+      <rect x="748" y="332" width="25" height="50" fill="rgba(200,220,255,0.4)" stroke="#888" stroke-width="1.5" rx="2"/>
+      <line x1="748" y1="332" x2="748" y2="382" stroke="#ff2222" stroke-width="3.5"/>
+      <line x1="748" y1="340" x2="773" y2="340" stroke="#aaa" stroke-width="0.5"/>
+      <line x1="748" y1="349" x2="773" y2="349" stroke="#aaa" stroke-width="0.5"/>
+      <line x1="748" y1="357" x2="773" y2="357" stroke="#aaa" stroke-width="0.5"/>
+      <line x1="748" y1="365" x2="773" y2="365" stroke="#aaa" stroke-width="0.5"/>
+      <line x1="748" y1="374" x2="773" y2="374" stroke="#aaa" stroke-width="0.5"/>
+      <line x1="757" y1="332" x2="757" y2="382" stroke="#aaa" stroke-width="0.5"/>
+      <line x1="766" y1="332" x2="766" y2="382" stroke="#aaa" stroke-width="0.5"/>
+      <!-- Boards -->
+      <path d="M 773 0 Q 840 0 840 88 L 840 626 Q 840 714 773 714 L 748 714 L 748 0 Z" fill="rgba(180,220,240,0.2)" stroke="none"/>
+      <path d="M 773 0 Q 840 0 840 88" fill="none" stroke="#9ab" stroke-width="3"/>
+      <path d="M 840 626 Q 840 714 773 714" fill="none" stroke="#9ab" stroke-width="3"/>
+      <line x1="2" y1="0" x2="773" y2="0" stroke="#9ab" stroke-width="3"/>
+      <line x1="2" y1="714" x2="773" y2="714" stroke="#9ab" stroke-width="3"/>
+      <!-- Slot reference -->
+      <rect x="580" y="231" width="168" height="252" fill="none" stroke="rgba(255,255,200,0.15)" stroke-width="1" stroke-dasharray="4 4"/>
+      <text x="584" y="245" font-family="Barlow Condensed" font-size="9" fill="rgba(255,255,180,0.3)" letter-spacing="0.12em">SLOT</text>
+      <!-- Zone labels -->
+      <text x="8"   y="703" font-family="Barlow Condensed" font-size="10" fill="#6688bb" opacity="0.75">← Neutral Zone (25ft) →</text>
+      <text x="350" y="703" font-family="Barlow Condensed" font-size="10" fill="#55aa77" opacity="0.75">← Offensive Zone (64ft) →</text>
+      <text x="752" y="703" font-family="Barlow Condensed" font-size="9"  fill="#cc8833" opacity="0.75">Behind Net</text>
+    </svg>
+    <canvas id="heatCanvas" width="840" height="714"></canvas>
+    <canvas id="dotCanvas"  width="840" height="714"></canvas>
+    <canvas id="hoverOverlay" width="840" height="714"
+      onmousemove="handleRinkHover(event)" onmouseleave="hideTooltip()"></canvas>
+  </div>
+</div>
+
+<div id="tooltip">
+  <div class="tt-name" id="ttName">–</div>
+  <hr class="tt-divider">
+  <div id="ttShotRows">
+  <div class="tt-row"><span class="tt-key">Shot type</span><span class="tt-val" id="ttType">–</span></div>
+  <div class="tt-row"><span class="tt-key">Distance</span><span class="tt-val" id="ttDist">–</span></div>
+  <div class="tt-row"><span class="tt-key">xGoal</span><span class="tt-val" id="ttXg">–</span></div>
+  <div class="tt-row"><span class="tt-key">Situation</span><span class="tt-val" id="ttSit">–</span></div>
+  </div>
+  <hr class="tt-divider" id="ttPlayerDivider" style="display:none">
+  <div id="ttPlayerStats" style="display:none">
+    <div class="tt-row"><span class="tt-key">Season G / xG</span><span class="tt-val" id="ttPGxg">–</span></div>
+    <div class="tt-row"><span class="tt-key">G – xG</span><span class="tt-val" id="ttPDiff">–</span></div>
+    <div class="tt-row"><span class="tt-key">Shots / HD Shots</span><span class="tt-val" id="ttPShots">–</span></div>
+  </div>
+</div>
+
+<div class="legend-row">
+  <div class="legend-scale">
+    <span class="legend-label">Low</span>
+    <div class="legend-gradient"></div>
+    <span class="legend-label">High</span>
+  </div>
+  <div class="dot-legend">
+    <div class="dot-item"><div class="dot-circle" style="background:#ff4d4d;border:1px solid #fff2"></div> Goal</div>
+    <div class="dot-item"><div class="dot-circle" style="background:#00c2ff55;border:1px solid #fff2"></div> Shot / Miss</div>
+  </div>
+</div>
+
+<div class="stats-bar">
+  <div class="stat"><div class="stat-value" id="statTotal">–</div><div class="stat-label">Total Shots</div></div>
+  <div class="stat"><div class="stat-value" id="statGoals">–</div><div class="stat-label">Goals</div></div>
+  <div class="stat"><div class="stat-value" id="statGR">–</div><div class="stat-label">Goal %</div></div>
+  <div class="stat"><div class="stat-value" id="statXG">–</div><div class="stat-label">Total xG</div></div>
+  <div class="stat"><div class="stat-value" id="statSOG">–</div><div class="stat-label">Shots on Goal</div></div>
+  <div class="stat"><div class="stat-value" id="statPlayers">–</div><div class="stat-label">Players</div></div>
+</div>
+
+<div class="section-divider">
+  <div class="divider-line"></div>
+  <h2>Shooting Talent · Player Leaderboard</h2>
+  <div class="divider-line"></div>
+</div>
+
+<div class="bottom-grid">
+  <!-- Scatter -->
+  <div class="chart-panel">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Goals vs Expected Goals</div>
+        <div class="chart-sub">Per player · current filters · click to isolate on rink</div>
+      </div>
+    </div>
+    <canvas id="scatterCanvas" height="240"></canvas>
+    <div class="scatter-legend">
+      <div class="scatter-legend-item"><div class="scatter-dot" style="background:var(--green)"></div> Over-performing xG</div>
+      <div class="scatter-legend-item"><div class="scatter-dot" style="background:var(--orange)"></div> Under-performing xG</div>
+      <div class="scatter-legend-item"><div class="scatter-dot" style="background:#5a7a96"></div> On pace</div>
+    </div>
+  </div>
+
+  <!-- Leaderboard -->
+  <div class="chart-panel">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Player Leaderboard</div>
+        <div class="chart-sub">Click row to filter rink · click header to sort</div>
+      </div>
+    </div>
+    <div class="leader-scroll">
+      <table class="leader-table" id="leaderTable">
+        <thead>
+          <tr>
+            <th onclick="sortLeader('name')">#  Player</th>
+            <th onclick="sortLeader('pos')">Pos</th>
+            <th onclick="sortLeader('goals')">G</th>
+            <th onclick="sortLeader('xGoals')">xG</th>
+            <th onclick="sortLeader('diff')">G–xG</th>
+            <th onclick="sortLeader('shots')">Shots</th>
+            <th onclick="sortLeader('hdShots')">HD</th>
+          </tr>
+        </thead>
+        <tbody id="leaderBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section-divider">
+  <div class="divider-line"></div>
+  <h2>Goal Expectancy by Distance</h2>
+  <div class="divider-line"></div>
+</div>
+
+<div class="chart-panel-wide">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">xGoal vs Actual Goal Rate · Shot Distance by Type</div>
+      <div class="chart-sub">Solid line = xGoal model · Dashed = actual goals / shots · 5ft bins</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+      <div class="xg-toggle">
+        <button id="btnShowXg" class="active" onclick="setXgMode('xg')">xGoal</button>
+        <button id="btnShowAct" onclick="setXgMode('actual')">Actual</button>
+        <button id="btnShowBoth" onclick="setXgMode('both')">Both</button>
+      </div>
+      <div class="type-pills" id="typePills"></div>
+    </div>
+  </div>
+  <canvas id="xgChart" height="280"></canvas>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   COORDINATE SYSTEM
+   x=0 center ice · x=25 blue line · x=89 goal line · x=100 end boards
+   Canvas: W=840px H=714px · Scale: 8.4px/ft
+═══════════════════════════════════════════════════ */
+const W=840,H=714,PF=8.4;
+function toSvgX(x){return x*PF;}
+function toSvgY(y){return H/2-y*PF;}
+
+/* ── State ── */
+let allShots=[],filteredShots=[],renderedDots=[];
+let allPlayers={};
+let filterEvent='ALL',filterSeason='ALL',filterTeam='ALL',filterSituation='ALL',filterPlayer=null;
+let heatMode='count',heatOpacity=0.70;
+let xgDisplayMode='both';
+let leaderSortKey='goals',leaderSortDir=1;
+
+const TYPE_COLORS={
+  'Wrist':'#00c2ff','Slap':'#ff6b35','Snap':'#a8e063','Backhand':'#f7c59f',
+  'Tip-In':'#e040fb','Deflected':'#ffd740','Wrap-around':'#69f0ae','Other':'#90a4ae'
+};
+let activeTypes=new Set(Object.keys(TYPE_COLORS));
+
+/* ═══════════ DATA LOADING ═══════════ */
+const SHOTS_URL='https://raw.githubusercontent.com/simonlasak/NHL-Shot-Analytics/refs/heads/main/shots_2018-2024_slim.csv';
+const PLAYERS_URL='https://raw.githubusercontent.com/simonlasak/NHL-Shot-Analytics/refs/heads/main/skaters_2018-2024_slim.csv';
+
+function parseCSV(text){
+  const lines=text.split('\n');
+  const headers=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
+  const rows=[];
+  for(let i=1;i<lines.length;i++){
+    const line=lines[i].trim();if(!line)continue;
+    const vals=line.split(',');const row={};
+    headers.forEach((h,idx)=>{row[h]=(vals[idx]||'').trim().replace(/^"|"$/g,'');});
+    rows.push(row);
+  }
+  return rows;
+}
+
+function inferSituation(row){
+  const h=parseInt(row.homeSkatersOnIce)||5,a=parseInt(row.awaySkatersOnIce)||5;
+  const isHome=parseInt(row.isHomeTeam)===1;
+  const atk=isHome?h:a,def=isHome?a:h;
+  if(atk===5&&def===5)return'5v5';
+  if(atk>def)return'PP';
+  if(atk<def)return'PK';
+  return'other';
+}
+
+async function loadAllData(){
+  const overlay=document.getElementById('loadingOverlay');
+  const sub=document.getElementById('loadingSub');
+
+  try {
+    // Load shots
+    sub.textContent='Fetching shots_2018-2024_slim.csv…';
+    const shotsRes=await fetch(SHOTS_URL);
+    if(!shotsRes.ok)throw new Error('Failed to fetch shots CSV ('+shotsRes.status+')');
+    sub.textContent='Parsing shot data…';
+    const shotsText=await shotsRes.text();
+    const shotRows=parseCSV(shotsText);
+    const shots=[];
+    shotRows.forEach(row=>{
+      const x=parseFloat(row.xCordAdjusted),y=parseFloat(row.yCordAdjusted);
+      if(isNaN(x)||isNaN(y))return;
+      shots.push({
+        xCordAdjusted:x,yCordAdjusted:y,
+        xGoal:parseFloat(row.xGoal)||0,goal:parseInt(row.goal)||0,
+        event:(row.event||'SHOT').toUpperCase(),
+        shotType:row.shotType||'Other',shotDistance:parseFloat(row.shotDistance)||0,
+        season:row.season||'',teamCode:row.teamCode||'',
+        shooterPlayerId:row.shooterPlayerId?parseInt(row.shooterPlayerId):null,
+        shooterName:row.shooterName||'',
+        playerPositionThatDidEvent:row.playerPositionThatDidEvent||'–',
+        situation:row.situation||inferSituation(row),
+        shotRush:parseInt(row.shotRush)||0,
+        shotRebound:parseInt(row.shotRebound)||0,
+      });
+    });
+    if(!shots.length)throw new Error('No valid shot rows parsed.');
+    allShots=shots;
+    allPlayers=buildPlayerMapFromShots(allShots);
+
+    // Load skaters
+    sub.textContent='Fetching skaters_2018-2024_slim.csv…';
+    const playersRes=await fetch(PLAYERS_URL);
+    if(!playersRes.ok)throw new Error('Failed to fetch players CSV ('+playersRes.status+')');
+    sub.textContent='Parsing player data…';
+    const playersText=await playersRes.text();
+    const playerRows=parseCSV(playersText);
+    playerRows.forEach(row=>{
+      if(row.situation&&row.situation!=='all')return;
+      const pid=parseInt(row.playerId);if(!pid)return;
+      if(!allPlayers[pid])allPlayers[pid]={name:row.name||String(pid),pos:'–',seasons:{}};
+      const season=row.season||'all';
+      allPlayers[pid].seasons[season]={
+        goals:parseFloat(row.I_F_goals)||0,
+        xGoals:parseFloat(row.I_F_xGoals)||0,
+        shots:parseFloat(row.I_F_shotAttempts)||0,
+        sog:parseFloat(row.I_F_shotsOnGoal)||0,
+        hdShots:parseFloat(row.I_F_highDangerShots)||0,
+        hdGoals:parseFloat(row.I_F_highDangerGoals)||0,
+        points:parseFloat(row.I_F_points)||0,
+        gameScore:parseFloat(row.gameScore)||0,
+        xgPct:parseFloat(row.onIce_xGoalsPercentage)||0,
+        icetime:parseFloat(row.icetime)||0,
+        games:parseFloat(row.games_played)||0,
+      };
+    });
+
+    sub.textContent='Building visuals…';
+    populateDropdowns();
+    buildTypePills();
+    drawRuler();
+    applyAllFilters();
+
+    // Hide overlay
+    overlay.classList.add('hidden');
+
+  } catch(err){
+    sub.textContent='';
+    document.querySelector('.loading-text').textContent='Error loading data';
+    const errDiv=document.createElement('div');
+    errDiv.style.cssText='font-size:0.78rem;color:#ff4d4d;max-width:360px;text-align:center;line-height:1.6;';
+    errDiv.textContent=err.message+'. Check that the GitHub repository is public and the CSV paths are correct.';
+    overlay.appendChild(errDiv);
+    console.error(err);
+  }
+}
+
+/* Build allPlayers lookup from shot data (derives stats on the fly) */
+function buildPlayerMapFromShots(shots){
+  const map={};
+  shots.forEach(s=>{
+    const key=s.shooterPlayerId;if(!key)return;
+    if(!map[key])map[key]={name:s.shooterName||'Unknown',pos:s.playerPositionThatDidEvent||'–',seasons:{}};
+    const sk=s.season||'all';
+    if(!map[key].seasons[sk])map[key].seasons[sk]={goals:0,xGoals:0,shots:0,hdShots:0,hdGoals:0,rebounds:0,rushes:0};
+    const st=map[key].seasons[sk];
+    st.goals+=s.goal||0;
+    st.xGoals+=s.xGoal||0;
+    st.shots+=1;
+    if((s.xGoal||0)>=0.2){st.hdShots+=1;st.hdGoals+=s.goal||0;}
+    if(s.shotRebound)st.rebounds+=1;
+    if(s.shotRush)st.rushes+=1;
+  });
+  return map;
+}
+
+function getPlayerStats(pid,season){
+  const p=allPlayers[pid];if(!p)return null;
+  if(season&&season!=='ALL'&&p.seasons[season])return p.seasons[season];
+  const agg={goals:0,xGoals:0,shots:0,hdShots:0,hdGoals:0,rebounds:0,rushes:0};
+  Object.values(p.seasons).forEach(st=>{
+    agg.goals+=st.goals;agg.xGoals+=st.xGoals;agg.shots+=st.shots;
+    agg.hdShots+=st.hdShots;agg.hdGoals+=st.hdGoals;
+    agg.rebounds+=st.rebounds||0;agg.rushes+=st.rushes||0;
+  });
+  return agg;
+}
+
+/* ── Dropdowns ── */
+function populateDropdowns(){
+  const seasons=[...new Set(allShots.map(s=>s.season))].filter(Boolean).sort();
+  const teams=[...new Set(allShots.map(s=>s.teamCode))].filter(Boolean).sort();
+  const ss=document.getElementById('selSeason'),cs=ss.value;
+  ss.innerHTML='<option value="ALL">All Seasons</option>';
+  seasons.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s+'-'+(parseInt(s)+1);ss.appendChild(o);});
+  if(cs&&cs!=='ALL')ss.value=cs;
+  const st=document.getElementById('selTeam'),ct=st.value;
+  st.innerHTML='<option value="ALL">All Teams</option>';
+  teams.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;st.appendChild(o);});
+  if(ct&&ct!=='ALL')st.value=ct;
+}
+
+/* ── Filters ── */
+function applyAllFilters(){
+  filterSeason=document.getElementById('selSeason').value;
+  filterTeam=document.getElementById('selTeam').value;
+  filterSituation=document.getElementById('selSituation').value;
+  filteredShots=allShots.filter(s=>{
+    if(filterEvent!=='ALL'&&s.event!==filterEvent)return false;
+    if(filterSeason!=='ALL'&&String(s.season)!==String(filterSeason))return false;
+    if(filterTeam!=='ALL'&&s.teamCode!==filterTeam)return false;
+    if(filterSituation!=='ALL'&&s.situation!==filterSituation)return false;
+    if(filterPlayer!==null&&s.shooterPlayerId!==filterPlayer)return false;
+    return true;
+  });
+  updateBadge();draw();updateStats();drawXGChart();buildLeaderboard();drawScatter();
+}
+function setFilter(f){
+  filterEvent=f;
+  ['btnAll','btnShot','btnGoal','btnMiss'].forEach(id=>document.getElementById(id).classList.remove('active'));
+  document.getElementById({ALL:'btnAll',SHOT:'btnShot',GOAL:'btnGoal',MISS:'btnMiss'}[f]).classList.add('active');
+  applyAllFilters();
+}
+function setMode(m){
+  heatMode=m;
+  ['btnCount','btnXG','btnGR'].forEach(id=>document.getElementById(id).classList.remove('active'));
+  document.getElementById({count:'btnCount',xg:'btnXG',gr:'btnGR'}[m]).classList.add('active');
+  draw();
+}
+function setXgMode(m){
+  xgDisplayMode=m;
+  ['btnShowXg','btnShowAct','btnShowBoth'].forEach(id=>document.getElementById(id).classList.remove('active'));
+  document.getElementById({xg:'btnShowXg',actual:'btnShowAct',both:'btnShowBoth'}[m]).classList.add('active');
+  drawXGChart();
+}
+function selectPlayer(pid){
+  filterPlayer=pid===filterPlayer?null:pid;
+  applyAllFilters();
+}
+function clearPlayerFilter(){filterPlayer=null;applyAllFilters();}
+function updateBadge(){
+  const parts=[];
+  if(filterSeason!=='ALL')parts.push(filterSeason+'-'+(parseInt(filterSeason)+1));
+  if(filterTeam!=='ALL')parts.push(filterTeam);
+  if(filterEvent!=='ALL')parts.push(filterEvent);
+  if(filterSituation!=='ALL')parts.push(filterSituation);
+  if(filterPlayer!==null&&allPlayers[filterPlayer])parts.push(allPlayers[filterPlayer].name);
+  const badge=document.getElementById('filterBadge');
+  if(parts.length){
+    document.getElementById('filterText').textContent='Showing: '+parts.join(' · ');
+    badge.style.display='flex';
+  } else badge.style.display='none';
+}
+
+/* ── Rink drawing ── */
+const BIN=16,BX=Math.ceil(W/BIN),BY=Math.ceil(H/BIN);
+function heatColor(t){
+  if(t<=0)return[0,0,0,0];
+  const a=Math.min(1,t*1.2)*255;let r,g,b;
+  if(t<0.33){r=255;g=230-t/0.33*100;b=0;}
+  else if(t<0.66){const s=(t-0.33)/0.33;r=255;g=130-s*100;b=0;}
+  else{const s=(t-0.66)/0.34;r=220;g=Math.max(0,30-s*30);b=Math.max(0,s*30);}
+  return[r,g,b,a];
+}
+function boxBlur(arr,w,h,r){
+  const tmp=new Float32Array(arr.length),out=new Float32Array(arr.length);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let s=0,c=0;for(let dx=-r;dx<=r;dx++){const nx=x+dx;if(nx>=0&&nx<w){s+=arr[y*w+nx];c++;}}tmp[y*w+x]=s/c;}
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let s=0,c=0;for(let dy=-r;dy<=r;dy++){const ny=y+dy;if(ny>=0&&ny<h){s+=tmp[ny*w+x];c++;}}out[y*w+x]=s/c;}
+  return out;
+}
+function draw(){drawHeatmap();drawDots();}
+function drawHeatmap(){
+  const ctx=document.getElementById('heatCanvas').getContext('2d');
+  ctx.clearRect(0,0,W,H);if(!filteredShots.length)return;
+  const bins=new Float32Array(BX*BY),cnt=new Float32Array(BX*BY);
+  filteredShots.forEach(s=>{
+    const px=toSvgX(s.xCordAdjusted),py=toSvgY(s.yCordAdjusted);
+    const bx=Math.floor(px/BIN),by=Math.floor(py/BIN);
+    if(bx<0||bx>=BX||by<0||by>=BY)return;
+    const idx=by*BX+bx;
+    bins[idx]+=heatMode==='count'?1:heatMode==='xg'?(s.xGoal||0):(s.goal||0);
+    cnt[idx]+=1;
+  });
+  let disp=bins;
+  if(heatMode==='gr'){disp=new Float32Array(BX*BY);for(let i=0;i<bins.length;i++)disp[i]=cnt[i]>=3?bins[i]/cnt[i]:0;}
+  let bl=disp;for(let i=0;i<3;i++)bl=boxBlur(bl,BX,BY,1);
+  const mx=Math.max(...bl)||1;
+  const img=ctx.createImageData(W,H);const d=img.data;
+  for(let py=0;py<H;py++)for(let px=0;px<W;px++){
+    const bx=Math.floor(px/BIN),by=Math.floor(py/BIN);
+    if(bx>=BX||by>=BY)continue;
+    const[r,g,b,a]=heatColor(bl[by*BX+bx]/mx);
+    const i=(py*W+px)*4;d[i]=r;d[i+1]=g;d[i+2]=b;d[i+3]=a*heatOpacity;
+  }
+  ctx.putImageData(img,0,0);
+}
+function drawDots(){
+  const ctx=document.getElementById('dotCanvas').getContext('2d');
+  ctx.clearRect(0,0,W,H);
+  renderedDots=[];
+  const MAX=1500;
+  const shots=filteredShots.length>MAX
+    ?filteredShots.filter((_,i)=>i%Math.ceil(filteredShots.length/MAX)===0)
+    :filteredShots;
+  shots.forEach(s=>{
+    const px=toSvgX(s.xCordAdjusted),py=toSvgY(s.yCordAdjusted);
+    const highlighted=filterPlayer!==null&&s.shooterPlayerId===filterPlayer;
+    ctx.beginPath();ctx.arc(px,py,highlighted?3.5:2,0,Math.PI*2);
+    ctx.fillStyle=s.goal===1?'rgba(255,80,80,0.85)'
+      :(highlighted?'rgba(0,194,255,0.7)':'rgba(0,194,255,0.22)');
+    ctx.fill();
+    if(highlighted){ctx.strokeStyle='rgba(0,194,255,0.5)';ctx.lineWidth=1;ctx.stroke();}
+    renderedDots.push({px,py,shot:s});
+  });
+}
+
+function updateStats(){
+  const total=filteredShots.length,goals=filteredShots.filter(s=>s.goal===1).length;
+  const sog=filteredShots.filter(s=>s.event==='SHOT'||s.event==='GOAL').length;
+  const xg=filteredShots.reduce((a,s)=>a+(s.xGoal||0),0);
+  const players=new Set(filteredShots.map(s=>s.shooterPlayerId).filter(Boolean)).size;
+  document.getElementById('statTotal').textContent=total.toLocaleString();
+  document.getElementById('statGoals').textContent=goals.toLocaleString();
+  document.getElementById('statGR').textContent=total>0?(goals/total*100).toFixed(1)+'%':'–';
+  document.getElementById('statXG').textContent=xg.toFixed(1);
+  document.getElementById('statSOG').textContent=sog.toLocaleString();
+  document.getElementById('statPlayers').textContent=players.toLocaleString();
+}
+
+/* ── Tooltip on rink hover ── */
+function handleRinkHover(e){
+  const rect=document.getElementById('canvasStack').getBoundingClientRect();
+  const scaleX=W/rect.width,scaleY=H/rect.height;
+  const mx=(e.clientX-rect.left)*scaleX,my=(e.clientY-rect.top)*scaleY;
+  let best=null,bestD=Infinity;
+  renderedDots.forEach(d=>{
+    const dist=Math.hypot(d.px-mx,d.py-my);
+    if(dist<bestD&&dist<18){bestD=dist;best=d;}
+  });
+  if(!best){hideTooltip();return;}
+  const s=best.shot;
+  const tt=document.getElementById('tooltip');
+  document.getElementById('ttShotRows').style.display='';
+  document.getElementById('ttName').textContent=(s.shooterName||'Unknown Player')+(s.goal?'  ⚽':' ');
+  document.getElementById('ttType').textContent=s.shotType||'–';
+  document.getElementById('ttDist').textContent=(s.shotDistance||0).toFixed(1)+'ft';
+  document.getElementById('ttXg').textContent=((s.xGoal||0)*100).toFixed(1)+'%';
+  document.getElementById('ttSit').textContent=[s.situation,s.shotRush?'Rush':null,s.shotRebound?'Rebound':null].filter(Boolean).join(' · ')||'–';
+  const pstats=getPlayerStats(s.shooterPlayerId,filterSeason==='ALL'?s.season:filterSeason);
+  if(pstats&&pstats.shots>0){
+    document.getElementById('ttPlayerDivider').style.display='';
+    document.getElementById('ttPlayerStats').style.display='';
+    document.getElementById('ttPGxg').textContent=`${pstats.goals} / ${pstats.xGoals.toFixed(1)}`;
+    const diff=pstats.goals-pstats.xGoals;
+    const el=document.getElementById('ttPDiff');
+    el.textContent=(diff>=0?'+':'')+diff.toFixed(1);
+    el.style.color=diff>0.5?'#39d98a':diff<-0.5?'#ff8c42':'#e2edf7';
+    document.getElementById('ttPShots').textContent=`${pstats.shots} / ${pstats.hdShots}`;
+  } else {
+    document.getElementById('ttPlayerDivider').style.display='none';
+    document.getElementById('ttPlayerStats').style.display='none';
+  }
+  tt.style.display='block';
+  let tx=e.clientX+14,ty=e.clientY-10;
+  if(tx+210>window.innerWidth)tx=e.clientX-210;
+  if(ty+160>window.innerHeight)ty=e.clientY-160;
+  tt.style.left=tx+'px';tt.style.top=ty+'px';
+}
+function hideTooltip(){document.getElementById('tooltip').style.display='none';}
+
+/* ── Player Leaderboard ── */
+function buildLeaderboard(){
+  const playerAgg={};
+  filteredShots.forEach(s=>{
+    const pid=s.shooterPlayerId;if(!pid)return;
+    if(!playerAgg[pid])playerAgg[pid]={
+      pid,name:s.shooterName||'Unknown',pos:s.playerPositionThatDidEvent||'–',
+      goals:0,xGoals:0,shots:0,hdShots:0,hdGoals:0
+    };
+    const p=playerAgg[pid];
+    p.goals+=s.goal||0;p.xGoals+=s.xGoal||0;p.shots+=1;
+    if((s.xGoal||0)>=0.2){p.hdShots+=1;if(s.goal)p.hdGoals+=1;}
+  });
+  let rows=Object.values(playerAgg).map(r=>({...r,diff:r.goals-r.xGoals}));
+  rows.sort((a,b)=>leaderSortDir*((b[leaderSortKey]||0)-(a[leaderSortKey]||0)));
+  const maxXg=Math.max(...rows.map(r=>r.xGoals),1);
+  document.querySelectorAll('.leader-table th').forEach(th=>{
+    th.classList.remove('sort-active');
+    if(th.textContent.trim().includes(leaderSortKey.replace('xGoals','xG').replace('goals','G').replace('shots','Shots').replace('hdShots','HD').replace('name','Player').replace('pos','Pos').replace('diff','G–xG')))
+      th.classList.add('sort-active');
+  });
+  const tbody=document.getElementById('leaderBody');
+  tbody.innerHTML='';
+  rows.slice(0,50).forEach((r,i)=>{
+    const diff=r.goals-r.xGoals;
+    const isSelected=filterPlayer===r.pid;
+    const barW=Math.max(1,Math.round((r.xGoals/maxXg)*40));
+    const tr=document.createElement('tr');
+    if(isSelected)tr.classList.add('selected');
+    tr.innerHTML=`
+      <td><span class="td-name">${i+1}. ${r.name}</span></td>
+      <td><span class="td-pos">${r.pos}</span></td>
+      <td>${r.goals}</td>
+      <td>${r.xGoals.toFixed(1)}<span class="td-xg-bar" style="width:${barW}px"></span></td>
+      <td class="${diff>=0?'td-diff-pos':'td-diff-neg'}">${diff>=0?'+':''}${diff.toFixed(1)}</td>
+      <td>${r.shots}</td>
+      <td>${r.hdShots}</td>`;
+    tr.onclick=()=>selectPlayer(r.pid);
+    tbody.appendChild(tr);
+  });
+  if(!rows.length){
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td colspan="7" style="text-align:center;color:var(--muted);padding:20px">No data</td>';
+    tbody.appendChild(tr);
+  }
+}
+function sortLeader(key){
+  if(leaderSortKey===key){leaderSortDir*=-1;}else{leaderSortKey=key;leaderSortDir=1;}
+  buildLeaderboard();
+}
+
+/* ── Shooting Talent Scatter ── */
+function drawScatter(){
+  const canvas=document.getElementById('scatterCanvas');
+  const dpr=window.devicePixelRatio||1;
+  const CW=canvas.parentElement.clientWidth-36,CH=240;
+  canvas.width=CW*dpr;canvas.height=CH*dpr;
+  canvas.style.width=CW+'px';canvas.style.height=CH+'px';
+  const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,CW,CH);
+  const ML=44,MR=20,MT=14,MB=36,pw=CW-ML-MR,ph=CH-MT-MB;
+  const playerAgg={};
+  filteredShots.forEach(s=>{
+    const pid=s.shooterPlayerId;if(!pid)return;
+    if(!playerAgg[pid])playerAgg[pid]={name:s.shooterName||'?',goals:0,xGoals:0,shots:0};
+    playerAgg[pid].goals+=s.goal||0;
+    playerAgg[pid].xGoals+=s.xGoal||0;
+    playerAgg[pid].shots+=1;
+  });
+  const pts=Object.entries(playerAgg).map(([pid,d])=>({pid:+pid,...d})).filter(d=>d.shots>=5);
+  if(!pts.length)return;
+  const maxVal=Math.max(...pts.map(d=>Math.max(d.goals,d.xGoals)))*1.15||1;
+  const sx=v=>ML+(v/maxVal)*pw,sy=v=>MT+ph-(v/maxVal)*ph;
+  ctx.strokeStyle='#1e3348';ctx.lineWidth=1;
+  ctx.font='10px Barlow, sans-serif';ctx.fillStyle='#5a7a96';
+  const ticks=5;
+  for(let i=0;i<=ticks;i++){
+    const v=(maxVal/ticks)*i;
+    const y_=sy(v);
+    ctx.beginPath();ctx.moveTo(ML,y_);ctx.lineTo(ML+pw,y_);ctx.stroke();
+    ctx.textAlign='right';ctx.fillText(v.toFixed(0),ML-4,y_+4);
+    ctx.textAlign='center';ctx.fillText(v.toFixed(0),sx(v),MT+ph+14);
+  }
+  ctx.strokeStyle='#2a4060';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(ML,MT);ctx.lineTo(ML,MT+ph);ctx.lineTo(ML+pw,MT+ph);ctx.stroke();
+  ctx.save();ctx.setLineDash([4,4]);ctx.strokeStyle='rgba(90,122,150,0.4)';ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.moveTo(sx(0),sy(0));ctx.lineTo(sx(maxVal),sy(maxVal));ctx.stroke();
+  ctx.restore();
+  ctx.save();ctx.translate(11,MT+ph/2);ctx.rotate(-Math.PI/2);
+  ctx.fillStyle='#8aaccc';ctx.textAlign='center';ctx.font='10px Barlow Condensed, sans-serif';
+  ctx.fillText('Actual Goals',0,0);ctx.restore();
+  ctx.fillStyle='#8aaccc';ctx.textAlign='center';ctx.font='10px Barlow Condensed, sans-serif';
+  ctx.fillText('Expected Goals (xG)',ML+pw/2,CH-4);
+  ctx.font='9px Barlow Condensed, sans-serif';
+  ctx.fillStyle='rgba(57,217,138,0.35)';ctx.fillText('↑ OVER-PERFORMING',sx(maxVal*0.6),sy(maxVal*0.6)-10);
+  ctx.fillStyle='rgba(255,140,66,0.35)';ctx.fillText('↓ UNDER-PERFORMING',sx(maxVal*0.4)+20,sy(maxVal*0.4)+16);
+  const scatterDots=[];
+  pts.forEach(p=>{
+    const x_=sx(p.xGoals),y_=sy(p.goals);
+    const diff=p.goals-p.xGoals;
+    const isSelected=filterPlayer===p.pid;
+    let col;
+    if(isSelected)col='#00c2ff';
+    else if(diff>1)col='rgba(57,217,138,0.85)';
+    else if(diff<-1)col='rgba(255,140,66,0.85)';
+    else col='rgba(90,122,150,0.7)';
+    ctx.beginPath();ctx.arc(x_,y_,isSelected?5:3.5,0,Math.PI*2);
+    ctx.fillStyle=col;ctx.fill();
+    if(isSelected){ctx.strokeStyle='#00c2ff';ctx.lineWidth=1.5;ctx.stroke();}
+    scatterDots.push({x:x_,y:y_,pid:p.pid,name:p.name,goals:p.goals,xGoals:p.xGoals});
+  });
+  if(filterPlayer){
+    const sel=scatterDots.find(d=>d.pid===filterPlayer);
+    if(sel){
+      ctx.font='bold 10px Barlow Condensed, sans-serif';
+      ctx.fillStyle='#00c2ff';ctx.textAlign='left';
+      let lx=sel.x+7,ly=sel.y-4;
+      if(lx+60>CW)lx=sel.x-65;
+      ctx.fillText(sel.name,lx,ly);
+    }
+  }
+  canvas._dots=scatterDots;
+  canvas._ctx={sx,sy,ML,MR,MT,MB,pw,ph,CW,CH};
+}
+
+/* Scatter hover */
+document.addEventListener('DOMContentLoaded',()=>{
+  const sc=document.getElementById('scatterCanvas');
+  sc.addEventListener('mousemove',e=>{
+    const dots=sc._dots;if(!dots)return;
+    const rect=sc.getBoundingClientRect();
+    const dpr=window.devicePixelRatio||1;
+    const mx=(e.clientX-rect.left)*(sc.width/rect.width)/dpr;
+    const my=(e.clientY-rect.top)*(sc.height/rect.height)/dpr;
+    let best=null,bestD=Infinity;
+    dots.forEach(d=>{const dist=Math.hypot(d.x-mx,d.y-my);if(dist<bestD&&dist<14){bestD=dist;best=d;}});
+    if(!best){hideTooltip();return;}
+    const tt=document.getElementById('tooltip');
+    const diff=best.goals-best.xGoals;
+    document.getElementById('ttName').textContent=best.name;
+    document.getElementById('ttShotRows').style.display='none';
+    document.getElementById('ttPlayerDivider').style.display='none';
+    document.getElementById('ttPlayerStats').style.display='';
+    document.getElementById('ttPGxg').textContent=`${best.goals} / ${best.xGoals.toFixed(1)}`;
+    const el=document.getElementById('ttPDiff');
+    el.textContent=(diff>=0?'+':'')+diff.toFixed(1);
+    el.style.color=diff>0.5?'#39d98a':diff<-0.5?'#ff8c42':'#e2edf7';
+    document.getElementById('ttPShots').textContent=best.shots;
+    tt.style.display='block';
+    let tx=e.clientX+14,ty=e.clientY-10;
+    if(tx+210>window.innerWidth)tx=e.clientX-210;
+    tt.style.left=tx+'px';tt.style.top=ty+'px';
+  });
+  sc.addEventListener('click',e=>{
+    const dots=sc._dots;if(!dots)return;
+    const rect=sc.getBoundingClientRect();
+    const dpr=window.devicePixelRatio||1;
+    const mx=(e.clientX-rect.left)*(sc.width/rect.width)/dpr;
+    const my=(e.clientY-rect.top)*(sc.height/rect.height)/dpr;
+    let best=null,bestD=Infinity;
+    dots.forEach(d=>{const dist=Math.hypot(d.x-mx,d.y-my);if(dist<bestD&&dist<14){bestD=dist;best=d;}});
+    if(best)selectPlayer(best.pid);
+  });
+  sc.addEventListener('mouseleave',hideTooltip);
+});
+
+/* ── xGoal by Distance Chart ── */
+const DBINS=18,DBS=5,MINB=5;
+function buildTypePills(){
+  const types=[...new Set(allShots.map(s=>s.shotType||'Other'))].sort();
+  activeTypes=new Set(types);
+  const extra=['#ff5252','#64ffda','#ff6d00','#d500f9','#00e676'];let ei=0;
+  types.forEach(t=>{if(!TYPE_COLORS[t]){TYPE_COLORS[t]=extra[ei%extra.length];ei++;}});
+  const container=document.getElementById('typePills');container.innerHTML='';
+  types.forEach(type=>{
+    const pill=document.createElement('span');
+    pill.className='pill active';pill.textContent=type;
+    pill.style.borderColor=TYPE_COLORS[type]||'#888';pill.style.color=TYPE_COLORS[type]||'#888';
+    pill.onclick=()=>{
+      if(activeTypes.has(type)){activeTypes.delete(type);pill.classList.remove('active');}
+      else{activeTypes.add(type);pill.classList.add('active');}
+      drawXGChart();
+    };
+    container.appendChild(pill);
+  });
+}
+function drawXGChart(){
+  const canvas=document.getElementById('xgChart');
+  const dpr=window.devicePixelRatio||1;
+  const CW=canvas.parentElement.clientWidth-48,CH=280;
+  canvas.width=CW*dpr;canvas.height=CH*dpr;
+  canvas.style.width=CW+'px';canvas.style.height=CH+'px';
+  const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,CW,CH);
+  const ML=52,MR=24,MT=16,MB=44,pw=CW-ML-MR,ph=CH-MT-MB;
+  const types=[...new Set(filteredShots.map(s=>s.shotType||'Other'))].sort();
+  const xgBins={},actBins={};
+  types.forEach(t=>{
+    xgBins[t]=Array.from({length:DBINS},()=>({sum:0,n:0}));
+    actBins[t]=Array.from({length:DBINS},()=>({goals:0,n:0}));
+  });
+  filteredShots.forEach(s=>{
+    const t=s.shotType||'Other';const bi=Math.floor((s.shotDistance||0)/DBS);
+    if(bi<0||bi>=DBINS||!xgBins[t])return;
+    xgBins[t][bi].sum+=s.xGoal||0;xgBins[t][bi].n+=1;
+    actBins[t][bi].goals+=s.goal||0;actBins[t][bi].n+=1;
+  });
+  let maxV=0.05;
+  types.forEach(t=>{
+    xgBins[t].forEach((b)=>{if(b.n>=MINB){const v=b.sum/b.n;if(v>maxV)maxV=v;}});
+    actBins[t].forEach((b)=>{if(b.n>=MINB){const v=b.goals/b.n;if(v>maxV)maxV=v;}});
+  });
+  maxV=Math.ceil(maxV*20)/20;
+  const px2=d=>ML+(d/90)*pw,py2=v=>MT+ph-(v/maxV)*ph;
+  ctx.strokeStyle='#1e3348';ctx.lineWidth=1;
+  ctx.font='11px Barlow, sans-serif';ctx.fillStyle='#5a7a96';ctx.textAlign='right';
+  for(let i=0;i<=5;i++){
+    const v=(maxV/5)*i,y_=py2(v);
+    ctx.beginPath();ctx.moveTo(ML,y_);ctx.lineTo(ML+pw,y_);ctx.stroke();
+    ctx.fillText((v*100).toFixed(0)+'%',ML-6,y_+4);
+  }
+  ctx.textAlign='center';ctx.fillStyle='#5a7a96';
+  for(let d=0;d<=90;d+=10){
+    const x_=px2(d);
+    ctx.beginPath();ctx.moveTo(x_,MT+ph);ctx.lineTo(x_,MT+ph+5);ctx.stroke();
+    ctx.fillText(d+"'",x_,MT+ph+17);
+  }
+  ctx.save();ctx.translate(13,MT+ph/2);ctx.rotate(-Math.PI/2);
+  ctx.fillStyle='#8aaccc';ctx.textAlign='center';ctx.font='11px Barlow Condensed, sans-serif';
+  ctx.fillText('Goal Rate',0,0);ctx.restore();
+  ctx.fillStyle='#8aaccc';ctx.textAlign='center';ctx.font='11px Barlow Condensed, sans-serif';
+  ctx.fillText('Shot Distance (feet from net)',ML+pw/2,CH-6);
+  ctx.strokeStyle='#2a4060';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(ML,MT);ctx.lineTo(ML,MT+ph);ctx.lineTo(ML+pw,MT+ph);ctx.stroke();
+  if(xgDisplayMode==='both'){
+    ctx.font='9px Barlow Condensed,sans-serif';ctx.fillStyle='rgba(142,172,204,0.6)';ctx.textAlign='left';
+    ctx.fillText('── xGoal model   ╌╌ actual goal rate',ML+4,MT+11);
+  }
+  const activeArr=types.filter(t=>activeTypes.has(t));
+  const labelY=[];
+  activeArr.forEach(type=>{
+    const color=TYPE_COLORS[type]||'#888';
+    if(xgDisplayMode==='xg'||xgDisplayMode==='both'){
+      const pts=xgBins[type].map((b,i)=>({dist:i*DBS+DBS/2,v:b.n>=MINB?b.sum/b.n:null})).filter(p=>p.v!==null);
+      if(pts.length>=2){
+        ctx.save();ctx.shadowColor=color;ctx.shadowBlur=4;
+        ctx.strokeStyle=color;ctx.lineWidth=2.2;ctx.lineJoin='round';ctx.lineCap='round';
+        ctx.beginPath();pts.forEach((p,i)=>{i===0?ctx.moveTo(px2(p.dist),py2(p.v)):ctx.lineTo(px2(p.dist),py2(p.v));});
+        ctx.stroke();ctx.restore();
+        pts.forEach(p=>{ctx.beginPath();ctx.arc(px2(p.dist),py2(p.v),2.5,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();});
+        const last=pts[pts.length-1];let y_=py2(last.v);
+        labelY.forEach(yy=>{if(Math.abs(y_-yy)<12)y_=y_>yy?y_+12:y_-12;});
+        labelY.push(y_);
+        ctx.font='bold 9px Barlow Condensed,sans-serif';ctx.fillStyle=color;ctx.textAlign='left';
+        ctx.fillText(type,px2(last.dist)+5,y_+4);
+      }
+    }
+    if(xgDisplayMode==='actual'||xgDisplayMode==='both'){
+      const apts=actBins[type].map((b,i)=>({dist:i*DBS+DBS/2,v:b.n>=MINB?b.goals/b.n:null})).filter(p=>p.v!==null);
+      if(apts.length>=2){
+        ctx.save();ctx.setLineDash([5,3]);
+        ctx.strokeStyle=color;ctx.lineWidth=1.6;ctx.globalAlpha=0.65;ctx.lineJoin='round';
+        ctx.beginPath();apts.forEach((p,i)=>{i===0?ctx.moveTo(px2(p.dist),py2(p.v)):ctx.lineTo(px2(p.dist),py2(p.v));});
+        ctx.stroke();ctx.restore();
+      }
+    }
+  });
+}
+
+/* ── Ruler ── */
+function drawRuler(){
+  const c=document.getElementById('rulerCanvas');
+  const dpr=window.devicePixelRatio||1;
+  c.width=840*dpr;c.height=38*dpr;
+  c.style.width='840px';c.style.height='38px';
+  const ctx=c.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,840,38);
+  const zones=[
+    {x0:0,x1:210,label:'Neutral Zone  25ft',bar:'rgba(100,130,200,0.45)',txt:'#7799cc'},
+    {x0:210,x1:748,label:'Offensive Zone  64ft',bar:'rgba(70,160,100,0.45)',txt:'#55cc88'},
+    {x0:748,x1:840,label:'Behind Net  11ft',bar:'rgba(180,120,50,0.50)',txt:'#cc8833'},
+  ];
+  ctx.font='bold 10px Barlow Condensed, sans-serif';ctx.textAlign='center';
+  zones.forEach(z=>{
+    ctx.fillStyle=z.bar;ctx.fillRect(z.x0+1,22,z.x1-z.x0-2,6);
+    ctx.strokeStyle=z.txt;ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(z.x0+1,18);ctx.lineTo(z.x0+1,31);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(z.x1-1,18);ctx.lineTo(z.x1-1,31);ctx.stroke();
+    ctx.fillStyle=z.txt;ctx.fillText(z.label,(z.x0+z.x1)/2,14);
+  });
+  [[0,'#cc4444'],[210,'#4466cc'],[748,'#cc4444'],[840,'#778899']].forEach(([x,col])=>{
+    ctx.strokeStyle=col;ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,38);ctx.stroke();
+  });
+}
+
+/* ── Init ── */
+window.addEventListener('resize',()=>{drawRuler();drawXGChart();drawScatter();});
+loadAllData();
+</script>
+</body>
+</html>
